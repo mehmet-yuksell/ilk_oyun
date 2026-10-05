@@ -1028,7 +1028,7 @@ export class GameScene extends Phaser.Scene {
         fontStyle: '600',
       })
       .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive(new Phaser.Geom.Rectangle(-70, -24, 140, 48), Phaser.Geom.Rectangle.Contains);
     panel.add(doubleLink);
     doubleLink.on('pointerup', () => {
       if (doubled) return;

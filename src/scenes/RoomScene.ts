@@ -433,16 +433,18 @@ export class RoomScene extends Phaser.Scene {
     this.addStyleOption(panelX + panelW / 2 - 72, panelY + 128, placed.icon, accent, 0, t('styleA', this.lang), placed);
     this.addStyleOption(panelX + panelW / 2 + 72, panelY + 128, placed.icon, accent, 1, t('styleB', this.lang), placed);
 
+    const cancelY = panelY + panelH - 26;
     const cancel = this.add
-      .text(this.scale.width / 2, panelY + panelH - 26, t('cancel', this.lang), {
+      .text(this.scale.width / 2, cancelY, t('cancel', this.lang), {
         fontFamily: 'Fredoka, sans-serif',
         fontSize: '13px',
         color: COLORS.inkSoft,
       })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    cancel.on('pointerup', () => this.modalLayer.removeAll(true));
+      .setOrigin(0.5);
     this.modalLayer.add(cancel);
+    const cancelZone = this.add.zone(this.scale.width / 2, cancelY, 120, 48).setInteractive({ useHandCursor: true });
+    cancelZone.on('pointerup', () => this.modalLayer.removeAll(true));
+    this.modalLayer.add(cancelZone);
   }
 
   private addStyleOption(
@@ -579,8 +581,9 @@ export class RoomScene extends Phaser.Scene {
   /** Günlük ödülü ödüllü reklamla ikiye katlama teklifi; birkaç saniye içinde dokunulmazsa kendiliğinden kapanır. */
   private offerDoubleDailyReward(awarded: number): void {
     const placement: RewardedPlacement = 'double-daily-reward';
+    const btnY = this.safeTop + 150;
     const btn = this.add
-      .text(this.scale.width / 2, this.safeTop + 150, t('watchAdDoubleDailyReward', this.lang), {
+      .text(this.scale.width / 2, btnY, t('watchAdDoubleDailyReward', this.lang), {
         fontFamily: 'Fredoka, sans-serif',
         fontSize: '14px',
         color: '#ffffff',
@@ -588,6 +591,9 @@ export class RoomScene extends Phaser.Scene {
         padding: { x: 10, y: 6 },
       })
       .setOrigin(0.5)
+      .setDepth(50);
+    const btnZone = this.add
+      .zone(this.scale.width / 2, btnY, Math.max(48, btn.width), 48)
       .setDepth(50)
       .setInteractive({ useHandCursor: true });
 
@@ -596,12 +602,14 @@ export class RoomScene extends Phaser.Scene {
       if (resolved) return;
       resolved = true;
       btn.destroy();
+      btnZone.destroy();
     };
 
-    btn.on('pointerup', () => {
+    btnZone.on('pointerup', () => {
       if (resolved) return;
       resolved = true;
       btn.destroy();
+      btnZone.destroy();
       this.analytics.track({ name: 'ad_offered', placement });
       this.showMockAdOverlay(() => {
         void this.adService.showRewarded(placement).then((watched) => {
@@ -672,7 +680,7 @@ export class RoomScene extends Phaser.Scene {
     };
     draw();
 
-    const zone = this.add.zone(x, y, w, h).setInteractive({ useHandCursor: true });
+    const zone = this.add.zone(x, y, w, Math.max(48, h)).setInteractive({ useHandCursor: true });
     zone.on('pointerup', () => {
       if (enabled) onTap();
     });

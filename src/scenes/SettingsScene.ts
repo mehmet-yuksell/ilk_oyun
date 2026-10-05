@@ -108,7 +108,7 @@ export class SettingsScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     if (!purchased) {
-      const zone = this.add.zone(x + w / 2, y + h / 2, w, h).setInteractive({ useHandCursor: true });
+      const zone = this.add.zone(x + w / 2, y + h / 2, w, Math.max(48, h)).setInteractive({ useHandCursor: true });
       zone.on('pointerup', () => this.onPurchaseRemoveAds());
     }
 
@@ -137,7 +137,7 @@ export class SettingsScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const zone = this.add.zone(x, y, w, h).setInteractive({ useHandCursor: true });
+    const zone = this.add.zone(x, y, w, Math.max(48, h)).setInteractive({ useHandCursor: true });
     zone.on('pointerup', onTap);
   }
 
