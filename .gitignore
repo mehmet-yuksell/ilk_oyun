@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Capacitor-generated icon/splash sources (reproducible via `npm run generate-icons`)
+assets
+
+# Android (Capacitor) build output / local machine config -- never commit signing keys
+android/app/build
+android/app/release
+android/build
+android/.gradle
+android/captures
+android/local.properties
+android/.idea
+android/app/src/main/assets/public
+android/app/src/main/assets/capacitor.config.json
+*.keystore
+*.jks
+
+.vercel
