@@ -177,7 +177,7 @@ export class GameScene extends Phaser.Scene {
     this.tutorialActive = false;
     this.tutorialHand = undefined;
     this.tutorialTimers = [];
-    this.confetti = new ConfettiEmitter(this, 500);
+    this.confetti = new ConfettiEmitter(this, 200);
 
     const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
     this.safeTop = insets.top;
@@ -385,14 +385,19 @@ export class GameScene extends Phaser.Scene {
     g.fillCircle(w * 0.08, h * 0.46, 130);
 
     // Kapların altındaki boş zemini bir "halı" illüstrasyonuyla doldurur -- az sayıda kap olan
-    // (erken) seviyelerde ekranın alt yarısı çıplak kalmasın diye.
-    const rugY = h * 0.8;
-    const rugW = w * 0.76;
-    const rugH = h * 0.17;
-    g.fillStyle(0xffffff, 0.14);
+    // (erken) seviyelerde ekranın alt yarısı çıplak/boş hissettirmesin diye belirgin (yüksek alfa,
+    // çok katmanlı) bir desen kullanılır.
+    const rugY = h * 0.79;
+    const rugW = w * 0.82;
+    const rugH = h * 0.2;
+    g.fillStyle(0xffffff, 0.22);
     g.fillEllipse(w / 2, rugY, rugW, rugH);
-    g.lineStyle(2, 0xffffff, 0.22);
-    g.strokeEllipse(w / 2, rugY, rugW * 0.78, rugH * 0.72);
+    g.fillStyle(0xffffff, 0.16);
+    g.fillEllipse(w / 2, rugY, rugW * 0.74, rugH * 0.7);
+    g.lineStyle(3, 0xffffff, 0.3);
+    g.strokeEllipse(w / 2, rugY, rugW * 0.9, rugH * 0.86);
+    g.lineStyle(2, 0xffffff, 0.24);
+    g.strokeEllipse(w / 2, rugY, rugW * 0.5, rugH * 0.46);
   }
 
   private createBackButton(x: number, y: number, onTap: () => void): void {
@@ -490,12 +495,22 @@ export class GameScene extends Phaser.Scene {
     // Kap sayısı artıp 2'den fazla satır gerektiğinde (ileri seviyeler) ızgarayı buton
     // satırının üstünde kalacak şekilde küçültür -- aksi halde alt satırlar butonların
     // arkasında kesilirdi. Az sayıda kap olan (erken) seviyelerde ise 1'in ÜZERİNE büyütüp
-    // ekranın alt yarısını boş bırakmaz (bkz. MAX_GRID_SCALE).
+    // ekranın alt yarısını boş bırakmaz (bkz. MAX_GRID_SCALE) -- ama en GENİŞ satır (en fazla
+    // COLS kap) her zaman ekran genişliğine (kenar boşluklarıyla) sığmalı, aksi halde kaplar
+    // ekranın yanlarından taşar.
     const rows = Math.max(1, Math.ceil(ids.length / COLS));
     const buttonTop = this.scale.height - this.safeBottom - BUTTON_HEIGHT - 26;
     const availableHeight = Math.max(100, buttonTop - TOP_MARGIN);
     const neededAtBase = rows * 4 * BASE_SLOT_HEIGHT + (rows - 1) * ROW_GAP;
-    const scale = Math.max(MIN_GRID_SCALE, Math.min(MAX_GRID_SCALE, availableHeight / neededAtBase));
+    const heightScale = availableHeight / neededAtBase;
+
+    const widestRow = Math.min(COLS, ids.length);
+    const sideMargin = 20;
+    const availableWidth = this.scale.width - 2 * sideMargin;
+    const neededWidthAtBase = widestRow * BASE_CONTAINER_WIDTH + (widestRow - 1) * COL_GAP;
+    const widthScale = availableWidth / neededWidthAtBase;
+
+    const scale = Math.max(MIN_GRID_SCALE, Math.min(MAX_GRID_SCALE, heightScale, widthScale));
 
     this.slotHeight = BASE_SLOT_HEIGHT * scale;
     this.containerWidth = BASE_CONTAINER_WIDTH * scale;
@@ -506,7 +521,9 @@ export class GameScene extends Phaser.Scene {
 
     const totalGridHeight = rows * 4 * this.slotHeight + (rows - 1) * rowGap;
     const verticalSlack = Math.max(0, availableHeight - totalGridHeight);
-    const topOffset = TOP_MARGIN + verticalSlack * 0.3;
+    // Az sayıda satır olan (erken) seviyelerde dikey boşluk ızgarayı ORTALAMAK için kullanılır --
+    // aksi halde kaplar üstte kalıp altta "boş" hissi veren büyük bir alan bırakırdı (bkz. "boşluk < %25").
+    const topOffset = TOP_MARGIN + verticalSlack * 0.48;
 
     ids.forEach((id, index) => {
       const container = this.gameState.containers.find((c) => c.id === id)!;
