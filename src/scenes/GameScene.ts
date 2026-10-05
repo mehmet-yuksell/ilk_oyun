@@ -158,7 +158,10 @@ export class GameScene extends Phaser.Scene {
 
     this.gameState = loaded.state;
     this.sessionMode = loaded.mode;
-    this.levelNumber = data.levelNumber ?? null;
+    // Not: debug modunda (?level=N) RoomScene veriyi GameSceneData olarak iletmez -- bu yüzden
+    // levelNumber burada URL parametresinden de okunur (tema rotasyonu, ekstra-kap ücretsizlik
+    // eşiği gibi her yerde "hangi seviyedeyiz" bilgisine ihtiyaç duyan kodun tutarlı çalışması için).
+    this.levelNumber = data.levelNumber ?? getDebugLevelParam() ?? null;
     this.mysteryActive = loaded.obstacles.mystery;
     this.par = loaded.par;
     this.undoStack = new UndoStack<GameState>();
