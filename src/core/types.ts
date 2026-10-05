@@ -15,6 +15,11 @@ export interface Container {
    * türetilir (ayrı bir sayaç/geçmiş gerektirmez) -- bkz. isContainerLocked.
    */
   readonly lockedWhileNonEmpty?: string;
+  /**
+   * Engel mekaniği: ayarlıysa bu kap SADECE belirtilen türü hedef olarak kabul eder (tryMove
+   * bunu target-type-locked ile reddeder). Kaynak olarak kullanımını etkilemez.
+   */
+  readonly onlyAccepts?: ItemType;
 }
 
 export interface GameState {
@@ -46,7 +51,8 @@ export type MoveError =
   | 'type-mismatch'
   | 'target-full'
   | 'source-locked'
-  | 'target-locked';
+  | 'target-locked'
+  | 'target-type-locked';
 
 export type MoveOutcome =
   | { readonly ok: true; readonly result: MoveResult }

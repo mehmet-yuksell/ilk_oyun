@@ -6,9 +6,9 @@ describe('levelConfigFor', () => {
     expect(levelConfigFor(42)).toEqual(levelConfigFor(42));
   });
 
-  it('ilk seviye çok kolaydır: 2 tür ve en az 2 boş kap', () => {
+  it('ilk seviye kolaydır: 3 tür ve en az 2 boş kap (ORTA zorluk güncellemesi -- bkz. DIFFICULTY.ranges)', () => {
     const config = levelConfigFor(1);
-    expect(config.itemTypeCount).toBe(2);
+    expect(config.itemTypeCount).toBe(3);
     expect(config.emptyContainerCount).toBeGreaterThanOrEqual(2);
   });
 

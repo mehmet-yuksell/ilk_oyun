@@ -107,6 +107,48 @@ describe('generateVerifiedLevel', () => {
   });
 });
 
+describe('mysteryActive bayrağı', () => {
+  it('hasMysteryItem belirtilmezse mysteryActive false döner', () => {
+    const result = generateVerifiedLevel(baseConfig);
+    expect(result.mysteryActive).toBe(false);
+  });
+
+  it('hasMysteryItem=true ise mysteryActive true döner (yalnızca sunum bayrağı, durumu değiştirmez)', () => {
+    const result = generateVerifiedLevel({ ...baseConfig, hasMysteryItem: true });
+    expect(result.mysteryActive).toBe(true);
+  });
+});
+
+describe('tek türlü kap (onlyAccepts) enjeksiyonu', () => {
+  it('hasTypeLock=false iken hiçbir kap onlyAccepts almaz', () => {
+    const result = generateVerifiedLevel({ ...baseConfig, hasTypeLock: false });
+    expect(result.hasTypeLock).toBe(false);
+    expect(result.initialState.containers.some((c) => c.onlyAccepts)).toBe(false);
+  });
+
+  it('hasTypeLock=true ve yeterince büyük bir seviyede tek türlü kap eklenir ve sertifika yine de geçerlidir', () => {
+    const big: LevelConfig = {
+      id: 42,
+      seed: 777,
+      itemTypeCount: 6,
+      containerCount: 8,
+      capacity: 4,
+      emptyContainerCount: 2,
+      shuffleDepth: 80,
+      hasObstacle: false,
+      hasTypeLock: true,
+    };
+    const result = generateVerifiedLevel(big);
+    expect(result.hasTypeLock).toBe(true);
+
+    const lockedContainer = result.initialState.containers.find((c) => c.onlyAccepts);
+    expect(lockedContainer).toBeDefined();
+
+    const check = verifyCertificate(result.initialState, result.certificate);
+    expect(check.valid).toBe(true);
+  });
+});
+
 describe('tek engel mekaniği: kilitli kap enjeksiyonu', () => {
   it('hasObstacle=false iken hiçbir kap kilitlenmez', () => {
     const result = generateVerifiedLevel({ ...baseConfig, hasObstacle: false });

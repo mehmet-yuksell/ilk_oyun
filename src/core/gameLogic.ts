@@ -88,6 +88,10 @@ export function tryMove(state: GameState, move: Move): MoveOutcome {
   const movingType = getTopType(source);
   if (movingType === null) return { ok: false, error: 'source-empty' };
 
+  if (target.onlyAccepts && target.onlyAccepts !== movingType) {
+    return { ok: false, error: 'target-type-locked' };
+  }
+
   const targetTopType = getTopType(target);
   if (targetTopType !== null && targetTopType !== movingType) {
     return { ok: false, error: 'type-mismatch' };

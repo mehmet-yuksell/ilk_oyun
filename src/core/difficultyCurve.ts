@@ -1,47 +1,105 @@
+import { DIFFICULTY } from '../config/tuning';
 import { ITEM_TYPE_POOL } from './itemTypePool';
 import type { LevelConfig } from './levelGenerator';
 
-const CAPACITY = 4;
-const BASE_SEED = 20240101;
-/** "İleri seviyeler" eşiği: bu numaradan itibaren tek engel mekaniği (kilitli kap) denenir. */
-const OBSTACLE_START_LEVEL = 50;
+export type ObstacleKind = 'mystery' | 'lock' | 'typeLock';
 
 /**
- * Seviye numarasından deterministik bir LevelConfig üretir.
- * - İlk 10 seviye: 2 tür, bol boş kap (çok kolay).
- * - Sonra yavaşça artan tür sayısı ve karıştırma derinliği.
- * - Her 10. seviye "nefes seviyesi": bir fazla boş kap + daha sığ karıştırma.
+ * Hangi engel türlerinin bu seviyede aktif olacağını belirler (ayar tuning.ts'teki DIFFICULTY.obstacles'tan
+ * gelir). Nefes seviyelerinde (her breatherEvery'de bir) hiç engel YOKTUR -- "belirgin biçimde daha kolay"
+ * hissi için. Aksi halde uygun türler arasında seviye numarasına göre deterministik biçimde döner
+ * (rastgelelik yok): seviye 50'ye kadar en fazla 1, sonrasında en fazla 2 engel türü birlikte.
  */
-export function levelConfigFor(levelNumber: number, baseSeed = BASE_SEED): LevelConfig {
+export function obstaclesForLevel(levelNumber: number, isBreather: boolean): readonly ObstacleKind[] {
+  if (isBreather) return [];
+
+  const { mysteryStartLevel, lockStartLevel, typeLockStartLevel, maxSimultaneousAfterLevel } = DIFFICULTY.obstacles;
+  const eligible: ObstacleKind[] = [];
+  if (levelNumber >= mysteryStartLevel) eligible.push('mystery');
+  if (levelNumber >= lockStartLevel) eligible.push('lock');
+  if (levelNumber >= typeLockStartLevel) eligible.push('typeLock');
+  if (eligible.length === 0) return [];
+
+  const maxCount = levelNumber > maxSimultaneousAfterLevel ? Math.min(2, eligible.length) : 1;
+  const startIdx = levelNumber % eligible.length;
+  const picked: ObstacleKind[] = [];
+  for (let i = 0; i < maxCount; i++) {
+    picked.push(eligible[(startIdx + i) % eligible.length]);
+  }
+  return picked;
+}
+
+function rangeFor(levelNumber: number): { itemTypeRange: readonly [number, number]; emptyContainerRange: readonly [number, number] } {
+  for (const rule of DIFFICULTY.ranges) {
+    if (levelNumber <= rule.maxLevel) return rule;
+  }
+  return DIFFICULTY.ranges[DIFFICULTY.ranges.length - 1];
+}
+
+/**
+ * Seviye numarasından deterministik bir LevelConfig üretir (bkz. src/config/tuning.ts: DIFFICULTY).
+ * - Seviye 1-5: 3 tür, 2 boş kap (öğretici, kolay).
+ * - Seviye 6-15 / 16-35 / 36-70 / 71+: tür sayısı kademeli artar, bazı aralıklarda boş kap sayısı
+ *   düşer (36+'dan itibaren seviyelerin yaklaşık yarısında 1 boş kap -- bkz. aşağıdaki salınım).
+ * - Her breatherEvery (varsayılan 5) seviyede bir "nefes seviyesi": fazladan boş kap + daha sığ
+ *   karıştırma + hiç engel yok.
+ * - Karıştırma derinliği genel eğilimde artar ama nefes seviyelerinde düşer ("testere dişi").
+ */
+export function levelConfigFor(levelNumber: number, baseSeed = DIFFICULTY.baseSeed): LevelConfig {
   if (levelNumber < 1) throw new Error('levelNumber >= 1 olmalı');
 
-  const isBreather = levelNumber % 10 === 0;
+  const isBreather = levelNumber % DIFFICULTY.breatherEvery === 0;
+  const { itemTypeRange, emptyContainerRange } = rangeFor(levelNumber);
 
-  const itemTypeCount = clamp(2 + Math.floor((levelNumber - 1) / 40), 2, ITEM_TYPE_POOL.length);
-  let emptyContainerCount = clamp(3 - Math.floor((levelNumber - 1) / 60), 1, 3);
+  const itemTypeCount = clamp(
+    itemTypeRange[0] + stepWithinRange(levelNumber, itemTypeRange),
+    itemTypeRange[0],
+    Math.min(itemTypeRange[1], ITEM_TYPE_POOL.length),
+  );
 
-  let shuffleDepthFactor = 1.5 + (Math.min(levelNumber, 400) / 400) * 3; // 1.5x -> 4.5x toplam eşya
+  // Boş kap sayısı: aralığın alt ve üst sınırı arasında, seviye numarasına göre deterministik bir
+  // salınımla seçilir (ör. 36-70 aralığında seviyelerin yaklaşık yarısı 1, yarısı 2 boş kap alır).
+  const [emptyMin, emptyMax] = emptyContainerRange;
+  let emptyContainerCount =
+    emptyMin === emptyMax ? emptyMin : emptyMin + (Math.floor(levelNumber / 2) % (emptyMax - emptyMin + 1));
+
+  let shuffleDepthFactor =
+    DIFFICULTY.shuffleDepthMinFactor +
+    (Math.min(levelNumber, DIFFICULTY.shuffleDepthRampLevels) / DIFFICULTY.shuffleDepthRampLevels) *
+      (DIFFICULTY.shuffleDepthMaxFactor - DIFFICULTY.shuffleDepthMinFactor);
 
   if (isBreather) {
-    emptyContainerCount = Math.min(emptyContainerCount + 1, CAPACITY);
-    shuffleDepthFactor *= 0.7;
+    emptyContainerCount = Math.min(emptyContainerCount + 1, DIFFICULTY.capacity);
+    shuffleDepthFactor *= DIFFICULTY.breatherShuffleFactor;
   }
 
   const filledContainerCount = itemTypeCount; // basit model: her tür tam olarak 1 dolu kabı doldurur
   const containerCount = filledContainerCount + emptyContainerCount;
-  const totalItems = itemTypeCount * CAPACITY;
+  const totalItems = itemTypeCount * DIFFICULTY.capacity;
   const shuffleDepth = Math.max(itemTypeCount * 3, Math.round(totalItems * shuffleDepthFactor));
+
+  const obstacles = obstaclesForLevel(levelNumber, isBreather);
 
   return {
     id: levelNumber,
     seed: (baseSeed + levelNumber * 1013904223) >>> 0,
     itemTypeCount,
     containerCount,
-    capacity: CAPACITY,
+    capacity: DIFFICULTY.capacity,
     emptyContainerCount,
     shuffleDepth,
-    hasObstacle: levelNumber >= OBSTACLE_START_LEVEL,
+    hasObstacle: obstacles.includes('lock'),
+    hasMysteryItem: obstacles.includes('mystery'),
+    hasTypeLock: obstacles.includes('typeLock'),
   };
+}
+
+/** [0, range genişliği] arasında, seviye numarasına göre deterministik biçimde kademeli artan bir adım. */
+function stepWithinRange(levelNumber: number, range: readonly [number, number]): number {
+  const width = range[1] - range[0];
+  if (width <= 0) return 0;
+  // Aralık içindeki ilerlemeyi 40 seviyelik bloklarla kademeli artırır (ör. 5-6 arası: ilk yarı 5, ikinci yarı 6).
+  return Math.min(width, Math.floor(levelNumber / 20));
 }
 
 function clamp(value: number, min: number, max: number): number {

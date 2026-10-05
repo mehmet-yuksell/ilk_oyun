@@ -18,6 +18,8 @@ export interface SaveData {
   readonly hapticEnabled: boolean;
   /** Mock IAP yer tutucusu: gerçek ödeme SDK'sı yok, Ayarlar ekranından anında "satın alınmış" sayılır. */
   readonly removeAdsPurchased: boolean;
+  /** Daha önce ipucu balonu gösterilmiş engel türleri ('mystery'|'lock'|'typeLock') -- her biri yalnızca ilk görüldüğünde anlatılır. */
+  readonly seenHints: readonly string[];
 }
 
 export function createDefaultSaveData(): SaveData {
@@ -32,6 +34,7 @@ export function createDefaultSaveData(): SaveData {
     soundEnabled: true,
     hapticEnabled: true,
     removeAdsPurchased: false,
+    seenHints: [],
   };
 }
 

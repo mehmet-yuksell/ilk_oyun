@@ -1,7 +1,7 @@
 import { getTopRunLength, getTopType, isLevelComplete, tryMove } from './gameLogic';
 import { ITEM_TYPE_POOL } from './itemTypePool';
 import { mulberry32, pick, randInt, type Rng } from './rng';
-import type { Container, GameState, Move } from './types';
+import type { Container, GameState, ItemType, Move } from './types';
 
 export interface LevelConfig {
   readonly id: number;
@@ -13,6 +13,13 @@ export interface LevelConfig {
   readonly shuffleDepth: number;
   /** true ise generateVerifiedLevel tek bir "kilitli kap" engeli eklemeyi dener (en iyi çaba, başarısız olursa sessizce atlanır). */
   readonly hasObstacle: boolean;
+  /**
+   * true ise bu seviyede "gizemli eşya" sunumu açıktır: GameScene, bir kabın en ÜSTÜNDEKİ eşya
+   * dışındaki tüm eşyaları "?" olarak çizer (yalnızca görsel -- çözüm/motor davranışını etkilemez).
+   */
+  readonly hasMysteryItem?: boolean;
+  /** true ise generateVerifiedLevel bir "tek türlü kap" (onlyAccepts) engeli eklemeyi dener (en iyi çaba). */
+  readonly hasTypeLock?: boolean;
 }
 
 export interface GeneratedLevel {
@@ -177,6 +184,10 @@ export interface VerifiedLevel {
   readonly attemptsUsed: number;
   /** tryInjectLock başarıyla bir "kilitli kap" engeli ekleyebildiyse true. */
   readonly hasLock: boolean;
+  /** tryInjectTypeLock başarıyla bir "tek türlü kap" engeli ekleyebildiyse true. */
+  readonly hasTypeLock: boolean;
+  /** config.hasMysteryItem'in aynısı -- GameScene'in tek bir yerden okuması için burada da taşınır. */
+  readonly mysteryActive: boolean;
 }
 
 const SEED_RETRY_STRIDE = 7919; // tohumu her denemede deterministik biçimde değiştiren asal sayı
@@ -193,12 +204,23 @@ export function generateVerifiedLevel(baseConfig: LevelConfig, maxAttempts = 8):
     let hasLock = false;
     if (config.hasObstacle) {
       const lockRng = mulberry32(config.seed ^ 0x5bd1e995);
-      const candidate = tryInjectLock(initialState, certificate, lockRng);
+      const candidate = tryInjectLock(finalState, certificate, lockRng);
       if (candidate && verifyCertificate(candidate, certificate).valid) {
         finalState = candidate;
         hasLock = true;
       }
       // Aksi halde kilitsiz haliyle devam edilir -- "en iyi çaba", doğrulanamayan bir engel asla eklenmez.
+    }
+
+    let hasTypeLock = false;
+    if (config.hasTypeLock) {
+      const typeLockRng = mulberry32(config.seed ^ 0x27d4eb2f);
+      const types = ITEM_TYPE_POOL.slice(0, config.itemTypeCount);
+      const candidate = tryInjectTypeLock(finalState, certificate, types, typeLockRng);
+      if (candidate && verifyCertificate(candidate, certificate).valid) {
+        finalState = candidate;
+        hasTypeLock = true;
+      }
     }
 
     return {
@@ -208,6 +230,8 @@ export function generateVerifiedLevel(baseConfig: LevelConfig, maxAttempts = 8):
       verifiedMoveCount: check.actualMoveCount,
       attemptsUsed: attempt + 1,
       hasLock,
+      hasTypeLock,
+      mysteryActive: config.hasMysteryItem ?? false,
     };
   }
   throw new Error(`Seviye üretilemedi (${maxAttempts} denemede doğrulanamadı): id=${baseConfig.id}`);
@@ -268,6 +292,54 @@ function tryInjectLock(initialState: GameState, certificate: readonly Move[], rn
   return {
     containers: initialState.containers.map((c) =>
       c.id === choice.locked ? { ...c, lockedWhileNonEmpty: choice.gate } : c,
+    ),
+  };
+}
+
+/**
+ * "Tek türlü kap" (onlyAccepts) için GÜVENLE kilitlenebilecek bir (boş kap, tür) çifti arar:
+ * sertifikayı oynatıp her kabın HEDEF olarak hangi tür(ler)i aldığını kaydeder. Bir kap sertifika
+ * boyunca hiç hedef olmadıysa ya da yalnızca TEK bir türü hedef aldıysa, o türe kilitlemek
+ * sertifikayı bozmaz (tryMove onlyAccepts'i yalnızca HEDEFE giren türü kısıtlar, kaynaktan
+ * çıkışı etkilemez). Uygun aday bulunamazsa null döner (çağıran kilitsiz devam eder).
+ */
+function tryInjectTypeLock(
+  initialState: GameState,
+  certificate: readonly Move[],
+  types: readonly ItemType[],
+  rng: Rng,
+): GameState | null {
+  const emptyIds = initialState.containers.filter((c) => c.items.length === 0).map((c) => c.id);
+  if (emptyIds.length === 0) return null;
+
+  const incomingTypes = new Map<string, Set<ItemType>>();
+  let state = initialState;
+  for (const move of certificate) {
+    if (isLevelComplete(state)) break;
+    const outcome = tryMove(state, move);
+    if (!outcome.ok) return null;
+    const set = incomingTypes.get(move.targetId) ?? new Set<ItemType>();
+    set.add(outcome.result.movedType);
+    incomingTypes.set(move.targetId, set);
+    state = outcome.result.state;
+  }
+
+  const candidates: { containerId: string; type: ItemType }[] = [];
+  for (const id of emptyIds) {
+    const set = incomingTypes.get(id);
+    if (!set || set.size === 0) {
+      for (const type of types) candidates.push({ containerId: id, type });
+    } else if (set.size === 1) {
+      candidates.push({ containerId: id, type: [...set][0] });
+    }
+    // set.size > 1: bu kap birden fazla türü hedef almış -- tek türlü kilit için güvenli değil, atlanır.
+  }
+  if (candidates.length === 0) return null;
+
+  const choice = pick(rng, candidates);
+  return {
+    containers: initialState.containers.map((c) =>
+      c.id === choice.containerId ? { ...c, onlyAccepts: choice.type } : c,
     ),
   };
 }

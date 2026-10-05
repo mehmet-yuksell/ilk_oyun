@@ -296,6 +296,42 @@ describe('isContainerLocked / kilitli kap hamle reddi', () => {
   });
 });
 
+describe('onlyAccepts (tek türlü kap engeli)', () => {
+  it('tryMove, onlyAccepts ile eşleşmeyen türü target-type-locked ile reddeder', () => {
+    const s = state([
+      { id: 'A', capacity: 4, items: [{ type: 'book' }] },
+      { id: 'B', capacity: 4, items: [], onlyAccepts: 'cup' },
+    ]);
+    expect(tryMove(s, { sourceId: 'A', targetId: 'B' })).toEqual({ ok: false, error: 'target-type-locked' });
+  });
+
+  it('tryMove, onlyAccepts ile eşleşen türü normal şekilde kabul eder', () => {
+    const s = state([
+      { id: 'A', capacity: 4, items: [{ type: 'cup' }] },
+      { id: 'B', capacity: 4, items: [], onlyAccepts: 'cup' },
+    ]);
+    const outcome = tryMove(s, { sourceId: 'A', targetId: 'B' });
+    expect(outcome.ok).toBe(true);
+  });
+
+  it('onlyAccepts kaynaktan çıkışı etkilemez', () => {
+    const s = state([
+      { id: 'A', capacity: 4, items: [{ type: 'cup' }], onlyAccepts: 'cup' },
+      { id: 'B', capacity: 4, items: [] },
+    ]);
+    const outcome = tryMove(s, { sourceId: 'A', targetId: 'B' });
+    expect(outcome.ok).toBe(true);
+  });
+
+  it('getValidMoves, onlyAccepts ile eşleşmeyen hamleleri listelemez', () => {
+    const s = state([
+      { id: 'A', capacity: 4, items: [{ type: 'book' }] },
+      { id: 'B', capacity: 4, items: [], onlyAccepts: 'cup' },
+    ]);
+    expect(getValidMoves(s).some((m) => m.targetId === 'B')).toBe(false);
+  });
+});
+
 describe('isStuck', () => {
   it('seviye tamamlandıysa stuck değildir', () => {
     expect(isStuck(state([{ id: 'A', capacity: 4, items: [] }]))).toBe(false);

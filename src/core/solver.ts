@@ -88,6 +88,27 @@ export function solve(initial: GameState, options: SolveOptions = {}): SolveResu
   };
 }
 
+export interface ParResult {
+  /** Hedef (par) hamle sayısı: BFS tamamlanabildiyse gerçek en kısa yol, aksi halde sertifika uzunluğu. */
+  readonly par: number;
+  /** true ise par, BFS ile KANITLANMIŞ en kısa yoldur; false ise bütçe yetmediği için doğrulanmış
+   * sertifika uzunluğuna düşülmüştür (gerçek ama muhtemelen optimal olmayan bir çözüm). */
+  readonly exact: boolean;
+}
+
+/**
+ * Yıldız eşiği için "par" (hedef hamle sayısı) hesaplar. BFS verilen bütçede tamamlanırsa gerçek
+ * en kısa yolu kullanır; tamamlanamazsa (büyük durum uzayı) doğrulanmış sertifika uzunluğuna düşer --
+ * bu, 3 yıldızı biraz daha toleranslı yapar ama HER ZAMAN ulaşılabilir olmasını garanti eder.
+ */
+export function computePar(initial: GameState, certificateLength: number, maxStates: number): ParResult {
+  const result = solve(initial, { maxStates });
+  if (result.solvable && result.path) {
+    return { par: result.path.length, exact: true };
+  }
+  return { par: certificateLength, exact: false };
+}
+
 function reconstructPath(nodes: readonly SearchNode[], endIndex: number): Move[] {
   const path: Move[] = [];
   let i: number | null = endIndex;

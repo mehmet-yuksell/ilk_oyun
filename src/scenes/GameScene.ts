@@ -14,22 +14,24 @@ import { levelConfigFor } from '../core/difficultyCurve';
 import { dailyPuzzleConfig } from '../core/dailyPuzzle';
 import { todayKey } from '../core/dailyReward';
 import { generateVerifiedLevel } from '../core/levelGenerator';
-import { drawItemArt, strokeArc } from './itemVisuals';
-import { JUICE } from './juiceConfig';
-import { COLORS, RADIUS, hexToNum, shade } from './theme';
+import { computePar } from '../core/solver';
+import { accentFor, createItemVisual, strokeArc } from './itemVisuals';
+import { JUICE, DIFFICULTY, themeForLevel } from '../config/tuning';
+import { COLORS, RADIUS, SHADOW, hexToNum, shade } from './theme';
 import { readSafeAreaInsets } from './safeArea';
 import { getDebugLevelParam } from './debugLevelParam';
+import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { type HapticService, WebVibrationHapticService } from '../services/HapticService';
 import { type SoundService, WebAudioSoundService } from '../services/SoundService';
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
 import { type AdService, MockAdService, type RewardedPlacement, shouldShowInterstitial } from '../services/AdService';
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { t } from '../i18n/translations';
-import type { Language } from '../i18n/translations';
+import type { Language, TranslationKey } from '../i18n/translations';
 
 const PROGRESS_LEVEL_STARS = 10;
 const DAILY_PUZZLE_STARS = 15;
-const DOUBLE_OFFER_WINDOW_MS = 2500;
+const MYSTERY_TYPE = '__mystery__';
 
 export interface GameSceneData {
   readonly mode?: 'progress' | 'daily';
@@ -39,16 +41,27 @@ export interface GameSceneData {
 type SessionMode = 'progress' | 'daily' | 'debug' | 'demo';
 type FeedbackKind = 'tap' | 'land' | 'complete' | 'invalid' | 'medium';
 
+interface ActiveObstacles {
+  readonly mystery: boolean;
+  readonly lock: boolean;
+  readonly typeLock: boolean;
+}
+
 interface LoadedLevel {
   readonly state: GameState;
   readonly mode: SessionMode;
   readonly label: string;
+  readonly obstacles: ActiveObstacles;
+  readonly par: number;
+  readonly parExact: boolean;
 }
 
 // "Taban" (en fazla 2 satır / 6 kap olan erken seviyeler için) boyutlar. Daha fazla kap
 // gerektiren ileri seviyelerde computeLayouts() bunları satır sayısına göre küçültüp
 // this.containerWidth/this.slotHeight üzerinden kullanır -- aksi halde kap ızgarası alt
 // butonların arkasına taşıp ekrandan kesilirdi (bkz. 12 kaplı seviyelerde gözlenen taşma).
+// MAX_GRID_SCALE: az sayıda kap olan (erken) seviyelerde ızgara 1x'te kilitlenip altında boş
+// alan bırakmasın diye -- ekrana sığdığı sürece 1'in ÜZERİNE de büyüyebilir (bkz. "boşluk < %25").
 const BASE_CONTAINER_WIDTH = 150;
 const BASE_SLOT_HEIGHT = 54;
 const COLS = 3;
@@ -58,9 +71,11 @@ const TOP_MARGIN = 170;
 const BASE_ITEM_INSET_X = 12;
 const BASE_ITEM_INSET_Y = 5;
 const MIN_GRID_SCALE = 0.52;
+const MAX_GRID_SCALE = 1.32;
 const DRAG_THRESHOLD = 8;
 const BUTTON_WIDTH = 160;
 const BUTTON_HEIGHT = 52;
+const MIN_TOUCH_TARGET = 48;
 
 interface Layout {
   readonly rect: Phaser.Geom.Rectangle;
@@ -92,6 +107,7 @@ export class GameScene extends Phaser.Scene {
   private sessionMode: SessionMode = 'demo';
   private levelNumber: number | null = null;
   private undoStack = new UndoStack<GameState>();
+  private confetti!: ConfettiEmitter;
 
   private layouts = new Map<string, Layout>();
   private selectedId: string | null = null;
@@ -108,11 +124,16 @@ export class GameScene extends Phaser.Scene {
   private itemInsetX = BASE_ITEM_INSET_X;
   private itemInsetY = BASE_ITEM_INSET_Y;
 
+  private mysteryActive = false;
+  private par = 0;
+  private extraContainerUsedThisLevel = false;
+
   private framesLayer!: Phaser.GameObjects.Container;
   private itemsLayer!: Phaser.GameObjects.Container;
   private statusSubText!: Phaser.GameObjects.Text;
   private stuckBanner!: Phaser.GameObjects.Text;
   private undoButton!: Button;
+  private extraContainerButton!: Button;
 
   private activePointerId: string | null = null;
   private dragRunLength = 0;
@@ -138,6 +159,8 @@ export class GameScene extends Phaser.Scene {
     this.gameState = loaded.state;
     this.sessionMode = loaded.mode;
     this.levelNumber = data.levelNumber ?? null;
+    this.mysteryActive = loaded.obstacles.mystery;
+    this.par = loaded.par;
     this.undoStack = new UndoStack<GameState>();
     this.layouts = new Map();
     this.selectedId = null;
@@ -150,9 +173,11 @@ export class GameScene extends Phaser.Scene {
     this.dragRunLength = 0;
     this.dragging = false;
     this.moveCount = 0;
+    this.extraContainerUsedThisLevel = false;
     this.tutorialActive = false;
     this.tutorialHand = undefined;
     this.tutorialTimers = [];
+    this.confetti = new ConfettiEmitter(this, 500);
 
     const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
     this.safeTop = insets.top;
@@ -176,6 +201,8 @@ export class GameScene extends Phaser.Scene {
         fontSize: '17px',
         fontStyle: '600',
         color: COLORS.ink,
+        stroke: '#ffffff',
+        strokeThickness: 3,
       })
       .setOrigin(0.5)
       .setDepth(1);
@@ -188,10 +215,11 @@ export class GameScene extends Phaser.Scene {
     labelText.setX(this.scale.width / 2 - 14);
 
     const pill = this.add.graphics();
-    pill.fillStyle(hexToNum(COLORS.surface), 0.82);
+    pill.fillStyle(hexToNum(COLORS.surface), 0.88);
     pill.fillRoundedRect(this.scale.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
-    pill.lineStyle(2, hexToNum(COLORS.coral), 0.5);
+    pill.lineStyle(2, hexToNum(COLORS.coral), 0.55);
     pill.strokeRoundedRect(this.scale.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
+    pill.setDepth(0);
 
     this.starAnchor = { x: this.scale.width / 2 + pillW / 2 - 24, y: headerY };
     this.drawStarGlyph(this.starAnchor.x, this.starAnchor.y, 9);
@@ -201,6 +229,8 @@ export class GameScene extends Phaser.Scene {
         fontFamily: 'Fredoka, sans-serif',
         fontSize: '13px',
         color: COLORS.inkSoft,
+        stroke: '#ffffff',
+        strokeThickness: 2,
       })
       .setOrigin(0.5);
 
@@ -226,7 +256,7 @@ export class GameScene extends Phaser.Scene {
       'undo',
       () => this.onUndo(),
     );
-    this.createButton(
+    this.extraContainerButton = this.createButton(
       this.scale.width / 2 + (BUTTON_WIDTH + 20) / 2,
       buttonY,
       t('extraContainerButton', this.lang),
@@ -245,36 +275,57 @@ export class GameScene extends Phaser.Scene {
     if (this.sessionMode === 'progress' && this.levelNumber === 1) {
       this.time.delayedCall(500, () => this.startTutorialHand());
     }
+
+    this.scheduleBlink();
+    this.maybeShowObstacleHints(loaded.obstacles);
   }
 
   private loadLevel(data: GameSceneData): LoadedLevel {
+    const noObstacles: ActiveObstacles = { mystery: false, lock: false, typeLock: false };
     const debugLevel = getDebugLevelParam();
     if (debugLevel !== null) {
       const result = generateVerifiedLevel(levelConfigFor(debugLevel));
       const lockNote = result.hasLock ? t('lockedContainerNote', this.lang) : '';
+      const { par, exact } = computePar(result.initialState, result.verifiedMoveCount, DIFFICULTY.livePaSolverMaxStates);
+      const parNote = ` par=${par}${exact ? '' : '~'}`;
       return {
         state: result.initialState,
         mode: 'debug',
-        label: `${t('generatedLevelLabel', this.lang, { n: debugLevel })}${lockNote}`,
+        label: `${t('generatedLevelLabel', this.lang, { n: debugLevel })}${lockNote}${parNote}`,
+        obstacles: { mystery: result.mysteryActive, lock: result.hasLock, typeLock: result.hasTypeLock },
+        par,
+        parExact: exact,
       };
     }
 
     if (data.mode === 'daily') {
       const result = generateVerifiedLevel(dailyPuzzleConfig(todayKey(new Date())));
-      return { state: result.initialState, mode: 'daily', label: t('dailyPuzzleLabel', this.lang) };
+      const { par, exact } = computePar(result.initialState, result.verifiedMoveCount, DIFFICULTY.livePaSolverMaxStates);
+      return {
+        state: result.initialState,
+        mode: 'daily',
+        label: t('dailyPuzzleLabel', this.lang),
+        obstacles: { mystery: result.mysteryActive, lock: result.hasLock, typeLock: result.hasTypeLock },
+        par,
+        parExact: exact,
+      };
     }
 
     if (data.mode === 'progress' && data.levelNumber) {
       const result = generateVerifiedLevel(levelConfigFor(data.levelNumber));
       const lockNote = result.hasLock ? t('lockedContainerNote', this.lang) : '';
+      const { par, exact } = computePar(result.initialState, result.verifiedMoveCount, DIFFICULTY.livePaSolverMaxStates);
       return {
         state: result.initialState,
         mode: 'progress',
         label: `${t('levelLabel', this.lang, { n: data.levelNumber })}${lockNote}`,
+        obstacles: { mystery: result.mysteryActive, lock: result.hasLock, typeLock: result.hasTypeLock },
+        par,
+        parExact: exact,
       };
     }
 
-    return { state: createDemoLevel(), mode: 'demo', label: t('demoLevelLabel', this.lang) };
+    return { state: createDemoLevel(), mode: 'demo', label: t('demoLevelLabel', this.lang), obstacles: noObstacles, par: 0, parExact: true };
   }
 
   /** Haptic + ses geri bildirimini tek yerden, ayarlara saygılı biçimde tetikler. */
@@ -301,25 +352,17 @@ export class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     const wallBottom = h * 0.58;
+    const theme = themeForLevel(this.levelNumber ?? 1);
 
     const g = this.add.graphics();
-    g.fillGradientStyle(
-      hexToNum(COLORS.bgTop),
-      hexToNum(COLORS.bgTop),
-      shade(COLORS.bgTop, -0.06),
-      shade(COLORS.bgTop, -0.06),
-      1,
-      1,
-      1,
-      1,
-    );
+    g.fillGradientStyle(hexToNum(theme.bgTop), hexToNum(theme.bgTop), shade(theme.bgTop, -0.08), shade(theme.bgTop, -0.08), 1, 1, 1, 1);
     g.fillRect(0, 0, w, wallBottom);
 
     g.fillGradientStyle(
-      shade(COLORS.bgBottom, 0.08),
-      shade(COLORS.bgBottom, 0.08),
-      shade(COLORS.bgBottom, -0.12),
-      shade(COLORS.bgBottom, -0.12),
+      hexToNum(theme.bgBottom),
+      hexToNum(theme.bgBottom),
+      shade(theme.bgBottom, -0.2),
+      shade(theme.bgBottom, -0.2),
       1,
       1,
       1,
@@ -327,31 +370,29 @@ export class GameScene extends Phaser.Scene {
     );
     g.fillRect(0, wallBottom, w, h - wallBottom);
 
-    g.fillStyle(0xffffff, 0.22);
+    g.fillStyle(0xffffff, 0.25);
     g.fillRect(0, wallBottom - 2, w, 3);
 
-    g.fillStyle(hexToNum(COLORS.ink), 0.05);
+    g.fillStyle(0xffffff, 0.08);
     for (let i = 0; i < 5; i++) {
       const ly = wallBottom + 18 + i * ((h - wallBottom - 24) / 5);
       g.fillRect(0, ly, w, 1.5);
     }
 
-    g.fillStyle(hexToNum(COLORS.turquoise), 0.07);
+    g.fillStyle(0xffffff, 0.1);
     g.fillCircle(w * 0.86, h * 0.14, 110);
-    g.fillStyle(hexToNum(COLORS.coral), 0.06);
+    g.fillStyle(0x000000, 0.05);
     g.fillCircle(w * 0.08, h * 0.46, 130);
 
     // Kapların altındaki boş zemini bir "halı" illüstrasyonuyla doldurur -- az sayıda kap olan
     // (erken) seviyelerde ekranın alt yarısı çıplak kalmasın diye.
-    const rugY = h * 0.78;
+    const rugY = h * 0.8;
     const rugW = w * 0.76;
-    const rugH = h * 0.2;
-    g.fillStyle(hexToNum(COLORS.coral), 0.1);
+    const rugH = h * 0.17;
+    g.fillStyle(0xffffff, 0.14);
     g.fillEllipse(w / 2, rugY, rugW, rugH);
-    g.lineStyle(2, hexToNum(COLORS.coral), 0.18);
+    g.lineStyle(2, 0xffffff, 0.22);
     g.strokeEllipse(w / 2, rugY, rugW * 0.78, rugH * 0.72);
-    g.fillStyle(hexToNum(COLORS.turquoise), 0.07);
-    g.fillCircle(w / 2, rugY, 10);
   }
 
   private createBackButton(x: number, y: number, onTap: () => void): void {
@@ -365,20 +406,24 @@ export class GameScene extends Phaser.Scene {
     g.lineBetween(x + 5, y - 7, x - 5, y);
     g.lineBetween(x - 5, y, x + 5, y + 7);
 
-    const zone = this.add.zone(x, y, r * 2, r * 2).setInteractive({ useHandCursor: true });
+    const zone = this.add.zone(x, y, MIN_TOUCH_TARGET, MIN_TOUCH_TARGET).setInteractive({ useHandCursor: true });
     zone.on('pointerup', onTap);
   }
 
-  private drawStarGlyph(x: number, y: number, r: number): void {
-    const g = this.add.graphics({ x, y });
-    g.fillStyle(hexToNum(COLORS.gold), 1);
+  private starPoints(r: number): { x: number; y: number }[] {
     const points: { x: number; y: number }[] = [];
     for (let i = 0; i < 10; i++) {
       const angle = (Math.PI / 5) * i - Math.PI / 2;
       const radius = i % 2 === 0 ? r : r * 0.45;
       points.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
     }
-    g.fillPoints(points, true);
+    return points;
+  }
+
+  private drawStarGlyph(x: number, y: number, r: number): void {
+    const g = this.add.graphics({ x, y });
+    g.fillStyle(hexToNum(COLORS.gold), 1);
+    g.fillPoints(this.starPoints(r), true);
   }
 
   private createButton(x: number, y: number, label: string, icon: 'undo' | 'plus', onTap: () => void): Button {
@@ -444,12 +489,13 @@ export class GameScene extends Phaser.Scene {
 
     // Kap sayısı artıp 2'den fazla satır gerektiğinde (ileri seviyeler) ızgarayı buton
     // satırının üstünde kalacak şekilde küçültür -- aksi halde alt satırlar butonların
-    // arkasında kesilirdi.
+    // arkasında kesilirdi. Az sayıda kap olan (erken) seviyelerde ise 1'in ÜZERİNE büyütüp
+    // ekranın alt yarısını boş bırakmaz (bkz. MAX_GRID_SCALE).
     const rows = Math.max(1, Math.ceil(ids.length / COLS));
     const buttonTop = this.scale.height - this.safeBottom - BUTTON_HEIGHT - 26;
     const availableHeight = Math.max(100, buttonTop - TOP_MARGIN);
     const neededAtBase = rows * 4 * BASE_SLOT_HEIGHT + (rows - 1) * ROW_GAP;
-    const scale = Math.max(MIN_GRID_SCALE, Math.min(1, availableHeight / neededAtBase));
+    const scale = Math.max(MIN_GRID_SCALE, Math.min(MAX_GRID_SCALE, availableHeight / neededAtBase));
 
     this.slotHeight = BASE_SLOT_HEIGHT * scale;
     this.containerWidth = BASE_CONTAINER_WIDTH * scale;
@@ -457,6 +503,10 @@ export class GameScene extends Phaser.Scene {
     this.itemInsetY = BASE_ITEM_INSET_Y * scale;
     const colGap = COL_GAP * scale;
     const rowGap = ROW_GAP * scale;
+
+    const totalGridHeight = rows * 4 * this.slotHeight + (rows - 1) * rowGap;
+    const verticalSlack = Math.max(0, availableHeight - totalGridHeight);
+    const topOffset = TOP_MARGIN + verticalSlack * 0.3;
 
     ids.forEach((id, index) => {
       const container = this.gameState.containers.find((c) => c.id === id)!;
@@ -468,7 +518,7 @@ export class GameScene extends Phaser.Scene {
 
       const boxHeight = container.capacity * this.slotHeight;
       const x = rowStartX + col * (this.containerWidth + colGap);
-      const y = TOP_MARGIN + row * (4 * this.slotHeight + rowGap);
+      const y = topOffset + row * (4 * this.slotHeight + rowGap);
 
       this.layouts.set(id, {
         rect: new Phaser.Geom.Rectangle(x, y, this.containerWidth, boxHeight),
@@ -510,10 +560,10 @@ export class GameScene extends Phaser.Scene {
         locked ? shade(COLORS.surfaceMuted, -0.05) : hexToNum(COLORS.surface),
         locked ? shade(COLORS.surfaceMuted, -0.15) : shade(COLORS.surface, -0.06),
         locked ? shade(COLORS.surfaceMuted, -0.15) : shade(COLORS.surface, -0.06),
-        locked ? 0.75 : 0.88,
-        locked ? 0.75 : 0.88,
-        locked ? 0.75 : 0.88,
-        locked ? 0.75 : 0.88,
+        locked ? 0.75 : 0.9,
+        locked ? 0.75 : 0.9,
+        locked ? 0.75 : 0.9,
+        locked ? 0.75 : 0.9,
       );
       g.fillRoundedRect(rx, ry, rw, rh, RADIUS.lg);
 
@@ -525,13 +575,20 @@ export class GameScene extends Phaser.Scene {
       }
 
       // dış çerçeve (ahşap/raf kenarı hissi)
-      g.lineStyle(isSelected ? 4 : 3, isSelected ? hexToNum(COLORS.coral) : locked ? hexToNum(COLORS.inkSoft) : shade(COLORS.amber, -0.1), isSelected ? 1 : locked ? 0.55 : 0.75);
+      g.lineStyle(
+        isSelected ? 4 : 3,
+        isSelected ? hexToNum(COLORS.coral) : locked ? hexToNum(COLORS.inkSoft) : shade(COLORS.amber, -0.1),
+        isSelected ? 1 : locked ? 0.55 : 0.75,
+      );
       g.strokeRoundedRect(rx, ry, rw, rh, RADIUS.lg);
 
       this.framesLayer.add(g);
 
       if (locked) {
         this.framesLayer.add(this.createLockGlyph(layout.centerX, ry + 22));
+      }
+      if (c.onlyAccepts) {
+        this.framesLayer.add(this.createTypeLockGlyph(rx + rw - 15, ry + 15, c.onlyAccepts));
       }
     }
   }
@@ -545,11 +602,74 @@ export class GameScene extends Phaser.Scene {
     return g;
   }
 
+  /** "Tek türlü kap" engelinin küçük renkli halka göstergesi -- o türün aksan rengiyle boyanır. */
+  private createTypeLockGlyph(x: number, y: number, acceptedType: string): Phaser.GameObjects.Graphics {
+    const g = this.add.graphics({ x, y });
+    const color = hexToNum(accentFor(acceptedType));
+    g.fillStyle(hexToNum(COLORS.surface), 0.95);
+    g.fillCircle(0, 0, 9);
+    g.lineStyle(3, color, 1);
+    g.strokeCircle(0, 0, 9);
+    g.fillStyle(color, 1);
+    g.fillCircle(0, 0, 4);
+    return g;
+  }
+
   private findContainerAt(x: number, y: number): string | null {
     for (const [id, layout] of this.layouts) {
       if (layout.rect.contains(x, y)) return id;
     }
     return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // İlk görülen engel türleri için kısa ipucu balonu
+  // ---------------------------------------------------------------------
+
+  private maybeShowObstacleHints(obstacles: ActiveObstacles): void {
+    const candidates: { key: string; flag: boolean; titleKey: TranslationKey; bodyKey: TranslationKey }[] = [
+      { key: 'mystery', flag: obstacles.mystery, titleKey: 'hintMysteryTitle', bodyKey: 'hintMysteryBody' },
+      { key: 'lock', flag: obstacles.lock, titleKey: 'hintLockTitle', bodyKey: 'hintLockBody' },
+      { key: 'typeLock', flag: obstacles.typeLock, titleKey: 'hintTypeLockTitle', bodyKey: 'hintTypeLockBody' },
+    ];
+    const unseen = candidates.find((c) => c.flag && !this.saveData.seenHints.includes(c.key));
+    if (!unseen) return;
+
+    this.saveData = { ...this.saveData, seenHints: [...this.saveData.seenHints, unseen.key] };
+    this.saveService.save(this.saveData);
+    this.time.delayedCall(700, () => this.showHintBubble(t(unseen.titleKey, this.lang), t(unseen.bodyKey, this.lang)));
+  }
+
+  private showHintBubble(title: string, body: string): void {
+    const w = Math.min(this.scale.width - 40, 380);
+    const y = this.safeTop + 158;
+    const container = this.add.container(this.scale.width / 2, y).setDepth(250).setAlpha(0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(hexToNum(COLORS.ink), 0.92);
+    bg.fillRoundedRect(-w / 2, -32, w, 64, 16);
+    container.add(bg);
+    container.add(
+      this.add
+        .text(0, -14, title, { fontFamily: 'Fredoka, sans-serif', fontSize: '14px', fontStyle: '600', color: COLORS.cream })
+        .setOrigin(0.5),
+    );
+    container.add(
+      this.add
+        .text(0, 10, body, {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '11px',
+          color: COLORS.cream,
+          align: 'center',
+          wordWrap: { width: w - 32 },
+        })
+        .setOrigin(0.5),
+    );
+
+    this.tweens.add({ targets: container, alpha: 1, duration: 220 });
+    this.time.delayedCall(3200, () => {
+      this.tweens.add({ targets: container, alpha: 0, duration: 260, onComplete: () => container.destroy() });
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -680,7 +800,8 @@ export class GameScene extends Phaser.Scene {
     if (!this.undoStack.canUndo()) return;
     const previous = this.undoStack.undo()!;
     this.gameState = previous;
-    this.moveCount = Math.max(0, this.moveCount - 1);
+    // Not: moveCount burada AZALTILMAZ -- geri alınan hamle görsel olarak iptal olsa da, yıldız
+    // puanlaması için "hamle sayısına eklenir" (bkz. onLevelWon: effectiveMoves = moveCount + undoCount).
     this.undoCount++;
     this.selectedId = null;
     this.comboCount = 0;
@@ -691,9 +812,17 @@ export class GameScene extends Phaser.Scene {
     this.checkStuckOrWin();
   }
 
-  /** "Ekstra Kap" artık ödüllü reklam vaadiyle sunulur (mock); gerçek ekleme sadece izleme "başarılı" dönünce olur. */
+  /** "Ekstra Kap" seviye başına en fazla 1 kez verilir; ilk DIFFICULTY.extraContainerFreeUntilLevel
+   * seviyede ücretsizdir, sonrasında mock ödüllü reklam karşılığında. */
   private onAddExtraContainer(): void {
-    if (this.isAnimating) return;
+    if (this.isAnimating || this.extraContainerUsedThisLevel) return;
+
+    const isFree = (this.levelNumber ?? Infinity) <= DIFFICULTY.extraContainerFreeUntilLevel;
+    if (isFree) {
+      this.grantExtraContainer();
+      return;
+    }
+
     this.isAnimating = true;
     const placement: RewardedPlacement = 'extra-container';
     this.analytics.track({ name: 'ad_offered', placement });
@@ -702,19 +831,24 @@ export class GameScene extends Phaser.Scene {
       void this.adService.showRewarded(placement).then((watched) => {
         this.isAnimating = false;
         if (!watched) return;
-
         this.analytics.track({ name: 'ad_watched', placement });
-        this.analytics.track({ name: 'booster_used', booster: 'extra-container' });
-
-        const capacity = this.gameState.containers[0]?.capacity ?? 4;
-        this.undoStack.push(this.gameState);
-        this.undoButton.setEnabled(true);
-        this.gameState = addEmptyContainer(this.gameState, capacity);
-        this.feedback('medium');
-        this.refreshAll();
-        this.checkStuckOrWin();
+        this.grantExtraContainer();
       });
     });
+  }
+
+  private grantExtraContainer(): void {
+    this.extraContainerUsedThisLevel = true;
+    this.extraContainerButton.setEnabled(false);
+    this.analytics.track({ name: 'booster_used', booster: 'extra-container' });
+
+    const capacity = this.gameState.containers[0]?.capacity ?? 4;
+    this.undoStack.push(this.gameState);
+    this.undoButton.setEnabled(true);
+    this.gameState = addEmptyContainer(this.gameState, capacity);
+    this.feedback('medium');
+    this.refreshAll();
+    this.checkStuckOrWin();
   }
 
   private showMockAdOverlay(onDone: () => void): void {
@@ -766,6 +900,7 @@ export class GameScene extends Phaser.Scene {
 
     // Oda ekranına geçiş zamanlanırken ek bir hamle bu akışı bozmasın diye girdi kilitlenir.
     this.isAnimating = true;
+    this.feedback('complete');
 
     const data = this.saveService.load();
     const awarded = this.sessionMode === 'progress' ? PROGRESS_LEVEL_STARS : DAILY_PUZZLE_STARS;
@@ -785,57 +920,148 @@ export class GameScene extends Phaser.Scene {
       undoCount: this.undoCount,
     });
 
-    const textKey = this.sessionMode === 'progress' ? 'levelCompleteWithStars' : 'dailyPuzzleCompleteWithStars';
-    this.statusSubText.setText(t(textKey, this.lang, { stars: awarded }));
+    // Yıldız (performans) derecelendirmesi: undo kullanımı hamle sayısına eklenir (bkz. onUndo).
+    const effectiveMoves = this.moveCount + this.undoCount;
+    const rating = this.par <= 0 ? 3 : effectiveMoves <= this.par ? 3 : effectiveMoves <= this.par * 1.3 ? 2 : 1;
 
-    this.offerDoubleStars(awarded, saved);
+    this.showLevelCompletePanel(rating, awarded, saved);
   }
 
-  /** Kazanılan yıldızları ödüllü reklamla ikiye katlama teklifi; birkaç saniye içinde dokunulmazsa kendiliğinden geçer. */
-  private offerDoubleStars(awarded: number, savedAfterBase: SaveData): void {
+  /** Seviye bitiş paneli: 1-3 derecelendirme yıldızı sırayla belirir, kazanılan yıldız sayacı sayar,
+   * büyük "Sonraki Seviye" butonu + reklamla katlama ikincil bağlantısı. */
+  private showLevelCompletePanel(rating: number, awarded: number, savedAfterBase: SaveData): void {
+    const reduced = prefersReducedMotion();
+    this.confetti.burst(this.scale.width, this.scale.height, reduced);
+
+    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x241437, 0).setOrigin(0, 0).setDepth(300);
+    this.tweens.add({ targets: overlay, fillAlpha: 0.5, duration: 220 });
+
+    const panelW = Math.min(this.scale.width - 56, 340);
+    const panelH = 380;
+    const panel = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(hexToNum(COLORS.surface), 1);
+    bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
+    bg.lineStyle(3, hexToNum(COLORS.coral), 0.5);
+    bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
+    panel.add(bg);
+
+    const titleKey = this.sessionMode === 'daily' ? 'dailyPuzzleLabel' : 'levelCompleteNoStars';
+    panel.add(
+      this.add
+        .text(0, -panelH / 2 + 40, t(titleKey, this.lang), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '22px',
+          fontStyle: '600',
+          color: COLORS.ink,
+        })
+        .setOrigin(0.5),
+    );
+
+    const starY = -panelH / 2 + 110;
+    const gap = 48;
+    for (let i = 0; i < 3; i++) {
+      const sx = (i - 1) * gap;
+      const filled = i < rating;
+      const starG = this.add.graphics({ x: sx, y: starY });
+      starG.fillStyle(filled ? hexToNum(COLORS.gold) : hexToNum(COLORS.surfaceMuted), 1);
+      starG.fillPoints(this.starPoints(20), true);
+      starG.setScale(0);
+      panel.add(starG);
+      this.tweens.add({
+        targets: starG,
+        scale: 1,
+        duration: JUICE.levelCompletePanel.starPopDuration,
+        delay: 260 + i * JUICE.levelCompletePanel.starPopStaggerMs,
+        ease: 'Back.easeOut',
+      });
+    }
+
+    const counterY = starY + 62;
+    const counterGlyph = this.add.graphics({ x: -36, y: counterY });
+    counterGlyph.fillStyle(hexToNum(COLORS.gold), 1);
+    counterGlyph.fillPoints(this.starPoints(11), true);
+    panel.add(counterGlyph);
+
+    const counterProxy = { n: 0 };
+    const counterText = this.add
+      .text(-16, counterY, '+0', { fontFamily: 'Fredoka, sans-serif', fontSize: '22px', fontStyle: '600', color: COLORS.ink })
+      .setOrigin(0, 0.5);
+    panel.add(counterText);
+    this.tweens.add({
+      targets: counterProxy,
+      n: awarded,
+      duration: JUICE.levelCompletePanel.counterDurationMs,
+      delay: 500,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => counterText.setText(`+${Math.round(counterProxy.n)}`),
+    });
+
+    // İkincil: reklamla katlama (isteğe bağlı, paneli kapatmaz).
     const placement: RewardedPlacement = this.sessionMode === 'daily' ? 'double-daily-reward' : 'double-stars';
     const labelKey = this.sessionMode === 'daily' ? 'watchAdDoubleDailyReward' : 'watchAdDoubleStars';
-
-    const btn = this.add
-      .text(this.scale.width / 2, this.safeTop + 86, t(labelKey, this.lang), {
+    let doubled = false;
+    let currentSaved = savedAfterBase;
+    const doubleLink = this.add
+      .text(0, counterY + 34, t(labelKey, this.lang), {
         fontFamily: 'Fredoka, sans-serif',
-        fontSize: '15px',
-        color: '#ffffff',
-        backgroundColor: COLORS.turquoise,
-        padding: { x: 10, y: 6 },
+        fontSize: '13px',
+        color: COLORS.turquoise,
+        fontStyle: '600',
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
-
-    let resolved = false;
-    const finish = () => {
-      if (resolved) return;
-      resolved = true;
-      btn.destroy();
-      this.maybeShowInterstitialThenGoToRoom();
-    };
-
-    btn.on('pointerup', () => {
-      if (resolved) return;
-      resolved = true;
-      btn.destroy();
+    panel.add(doubleLink);
+    doubleLink.on('pointerup', () => {
+      if (doubled) return;
+      doubled = true;
       this.analytics.track({ name: 'ad_offered', placement });
-
       this.showMockAdOverlay(() => {
         void this.adService.showRewarded(placement).then((watched) => {
-          if (watched) {
-            this.analytics.track({ name: 'ad_watched', placement });
-            const doubled: SaveData = { ...savedAfterBase, stars: savedAfterBase.stars + awarded };
-            this.saveService.save(doubled);
-            const textKey = this.sessionMode === 'daily' ? 'dailyPuzzleCompleteWithStars' : 'levelCompleteWithStars';
-            this.statusSubText.setText(t(textKey, this.lang, { stars: awarded * 2 }));
+          if (!watched) {
+            doubled = false;
+            return;
           }
-          this.time.delayedCall(500, () => this.maybeShowInterstitialThenGoToRoom());
+          this.analytics.track({ name: 'ad_watched', placement });
+          currentSaved = { ...currentSaved, stars: currentSaved.stars + awarded };
+          this.saveService.save(currentSaved);
+          doubleLink.setText(t('restoredLabel', this.lang));
+          doubleLink.disableInteractive();
+          this.tweens.add({ targets: counterProxy, n: awarded * 2, duration: 400, onUpdate: () => counterText.setText(`+${Math.round(counterProxy.n)}`) });
         });
       });
     });
 
-    this.time.delayedCall(DOUBLE_OFFER_WINDOW_MS, finish);
+    // Birincil: Sonraki Seviye.
+    const btnY = panelH / 2 - 56;
+    const btnW = panelW - 64;
+    const btnH = 56;
+    const btnBg = this.add.graphics();
+    btnBg.fillStyle(hexToNum(COLORS.coral), 1);
+    btnBg.fillRoundedRect(-btnW / 2, btnY - btnH / 2, btnW, btnH, btnH / 2);
+    btnBg.fillStyle(0xffffff, 0.18);
+    btnBg.fillRoundedRect(-btnW / 2 + 8, btnY - btnH / 2 + 5, btnW - 16, btnH * 0.4, btnH * 0.3);
+    panel.add(btnBg);
+    panel.add(
+      this.add
+        .text(0, btnY, t('nextLevelButton', this.lang), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '19px',
+          fontStyle: '600',
+          color: COLORS.cream,
+        })
+        .setOrigin(0.5),
+    );
+    const btnZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
+    btnZone.on('pointerup', () => {
+      overlay.destroy();
+      panel.destroy();
+      btnZone.destroy();
+      this.maybeShowInterstitialThenGoToRoom();
+    });
+
+    this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });
   }
 
   private maybeShowInterstitialThenGoToRoom(): void {
@@ -956,13 +1182,7 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(i * JUICE.starFly.staggerMs, () => {
         const star = this.add.graphics({ x: fromX, y: fromY });
         star.fillStyle(hexToNum(COLORS.gold), 1);
-        const pts: { x: number; y: number }[] = [];
-        for (let p = 0; p < 10; p++) {
-          const angle = (Math.PI / 5) * p - Math.PI / 2;
-          const radius = p % 2 === 0 ? 7 : 3;
-          pts.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-        }
-        star.fillPoints(pts, true);
+        star.fillPoints(this.starPoints(7), true);
 
         const progress = { t: 0 };
         this.tweens.add({
@@ -982,15 +1202,23 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private comboTextFor(combo: number): string {
+    if (combo >= 4) return t('comboText4Plus', this.lang);
+    if (combo === 3) return t('comboText3', this.lang);
+    return t('comboText2', this.lang);
+  }
+
   private showCombo(containerId: string, combo: number): void {
     const layout = this.layouts.get(containerId);
     if (!layout) return;
     const text = this.add
-      .text(layout.centerX, layout.topY - 10, t('comboLabel', this.lang, { n: combo }), {
+      .text(layout.centerX, layout.topY - 10, `${t('comboLabel', this.lang, { n: combo })} ${this.comboTextFor(combo)}`, {
         fontFamily: 'Fredoka, sans-serif',
-        fontSize: '20px',
+        fontSize: '18px',
         fontStyle: 'bold',
         color: COLORS.coral,
+        stroke: '#ffffff',
+        strokeThickness: 3,
       })
       .setOrigin(0.5);
     this.tweens.add({
@@ -1039,7 +1267,7 @@ export class GameScene extends Phaser.Scene {
       if (idx >= minHiddenIndex) child.setVisible(false);
     }
 
-    const chip = this.createItemVisual(movedType, startX, startY);
+    const chip = this.spawnItemVisual(movedType, startX, startY);
     if (movedCount > 1) {
       const badge = this.add
         .text(16, -14, `×${movedCount}`, {
@@ -1116,6 +1344,7 @@ export class GameScene extends Phaser.Scene {
       const liftIndexThreshold = c.items.length - runLength;
 
       c.items.forEach((item, idx) => {
+        const isTopItem = idx === c.items.length - 1;
         const slotFromBottom = idx;
         const rowFromTop = c.capacity - 1 - slotFromBottom;
         const x = layout.centerX;
@@ -1124,25 +1353,32 @@ export class GameScene extends Phaser.Scene {
         const isLifted = this.selectedId === c.id && idx >= liftIndexThreshold;
         const y = isLifted ? restY - JUICE.select.liftDistance : restY;
 
-        const visual = this.createItemVisual(item.type, x, restY);
+        const displayType = this.mysteryActive && !isTopItem ? MYSTERY_TYPE : item.type;
+        const visual = this.spawnItemVisual(displayType, x, restY);
         visual.setData('containerId', c.id);
         visual.setData('stackIndex', idx);
+        visual.setData('isTop', isTopItem);
         visual.setData('inDragRun', idx >= c.items.length - this.dragRunLength && c.id === this.activePointerId);
         visual.setData('baseX', x);
         visual.setData('baseY', restY);
         this.itemsLayer.add(visual);
 
         if (isLifted) {
+          (visual.getData('setExcited') as ((v: boolean) => void) | undefined)?.(true);
           this.tweens.add({ targets: visual, y, duration: JUICE.select.duration, ease: 'Sine.easeOut' });
         }
 
-        // Boştaki hafif "nefes alma" pulsasyonu -- yalnızca en üstteki (görünür) eşyada, performans için.
-        if (idx === c.items.length - 1) {
+        // Boştaki hafif "nefes alma" pulsasyonu -- yalnızca en üstteki (görünür) eşyada, performans
+        // için. Her karakter farklı FAZ ve sürede nefes alsın diye rastgele gecikme + süre verilir.
+        if (isTopItem) {
+          const duration = Phaser.Math.Between(JUICE.idle.durationMin, JUICE.idle.durationMax);
+          const delay = Phaser.Math.Between(0, 500);
           this.tweens.add({
             targets: visual,
             scaleX: 1 + JUICE.idle.scaleAmount,
             scaleY: 1 + JUICE.idle.scaleAmount,
-            duration: JUICE.idle.duration,
+            duration,
+            delay,
             yoyo: true,
             repeat: -1,
             ease: 'Sine.easeInOut',
@@ -1156,11 +1392,68 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private createItemVisual(type: string, x: number, y: number): Phaser.GameObjects.Container {
+  private spawnItemVisual(type: string, x: number, y: number): Phaser.GameObjects.Container {
     const w = this.containerWidth - this.itemInsetX * 2;
     const h = this.slotHeight - this.itemInsetY * 2;
-    const g = drawItemArt(this, type, w, h);
-    return this.add.container(x, y, [g]);
+    if (type === MYSTERY_TYPE) {
+      return this.createMysteryVisual(x, y, w, h);
+    }
+    const { container } = createItemVisual(this, type, w, h);
+    container.setPosition(x, y);
+    return container;
+  }
+
+  /** "Gizemli eşya" engeli: kabın en üstünde olmayan eşyalar yüzü kapalı bir "?" olarak çizilir. */
+  private createMysteryVisual(x: number, y: number, w: number, h: number): Phaser.GameObjects.Container {
+    const container = this.add.container(x, y);
+    const g = this.add.graphics();
+    g.fillStyle(SHADOW.color, SHADOW.alpha);
+    g.fillEllipse(0, h * 0.4, w * 0.6, h * 0.26);
+    const bodyW = w * 0.64;
+    const bodyH = h * 0.64;
+    g.fillGradientStyle(
+      shade(COLORS.inkSoft, 0.2),
+      shade(COLORS.inkSoft, 0.2),
+      shade(COLORS.inkSoft, -0.15),
+      shade(COLORS.inkSoft, -0.15),
+      1,
+      1,
+      1,
+      1,
+    );
+    g.fillRoundedRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH, 8);
+    g.fillStyle(0xffffff, 0.3);
+    g.fillEllipse(-bodyW * 0.18, -bodyH * 0.26, bodyW * 0.3, bodyH * 0.2);
+    container.add(g);
+    container.add(
+      this.add
+        .text(0, 0, '?', { fontFamily: 'Fredoka, sans-serif', fontSize: `${Math.round(bodyH * 0.6)}px`, fontStyle: '700', color: COLORS.cream })
+        .setOrigin(0.5),
+    );
+    return container;
+  }
+
+  // ---------------------------------------------------------------------
+  // Göz kırpma (rastgele, yalnızca en üstteki görünür karakterlerde)
+  // ---------------------------------------------------------------------
+
+  private scheduleBlink(): void {
+    const delay = Phaser.Math.Between(JUICE.blink.everyMsMin, JUICE.blink.everyMsMax);
+    this.time.delayedCall(delay, () => {
+      this.blinkRandomTopItem();
+      this.scheduleBlink();
+    });
+  }
+
+  private blinkRandomTopItem(): void {
+    const children = (this.itemsLayer?.list ?? []) as Phaser.GameObjects.Container[];
+    const topVisibles = children.filter((c) => c.visible && c.getData('isTop') === true && c.getData('setEyeState'));
+    if (topVisibles.length === 0) return;
+    const target = Phaser.Utils.Array.GetRandom(topVisibles) as Phaser.GameObjects.Container;
+    const setEyeState = target.getData('setEyeState') as ((s: 'open' | 'closed') => void) | undefined;
+    if (!setEyeState) return;
+    setEyeState('closed');
+    this.time.delayedCall(JUICE.blink.closeDuration + JUICE.blink.holdDuration, () => setEyeState('open'));
   }
 
   // ---------------------------------------------------------------------

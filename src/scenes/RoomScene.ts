@@ -12,6 +12,8 @@ import { colorForItemIndex } from './roomVisuals';
 import { drawRoomIcon, iconKeyForLabel, ICON_DEPTH, type RoomIconKey } from './roomItemArt';
 import { readSafeAreaInsets } from './safeArea';
 import { COLORS, hexToNum, shade } from './theme';
+import { themeForLevel } from '../config/tuning';
+import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
 
@@ -70,6 +72,7 @@ export class RoomScene extends Phaser.Scene {
   private itemsLayer!: Phaser.GameObjects.Container;
   private modalLayer!: Phaser.GameObjects.Container;
   private dailyRewardButton!: { setEnabled: (v: boolean) => void; setLabel: (s: string) => void };
+  private confetti!: ConfettiEmitter;
 
   constructor() {
     super('RoomScene');
@@ -89,6 +92,7 @@ export class RoomScene extends Phaser.Scene {
     }
     this.room = ROOMS[this.saveData.currentRoomIndex];
     this.placedItems = this.layoutItems(this.room);
+    this.confetti = new ConfettiEmitter(this, 210);
 
     const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
     this.safeTop = insets.top;
@@ -212,24 +216,16 @@ export class RoomScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     const wallBottom = h * 0.68;
+    const theme = themeForLevel(this.saveData.currentLevel);
 
     const g = this.add.graphics();
-    g.fillGradientStyle(
-      hexToNum(COLORS.bgTop),
-      hexToNum(COLORS.bgTop),
-      shade(COLORS.bgTop, -0.05),
-      shade(COLORS.bgTop, -0.05),
-      1,
-      1,
-      1,
-      1,
-    );
+    g.fillGradientStyle(hexToNum(theme.bgTop), hexToNum(theme.bgTop), shade(theme.bgTop, -0.08), shade(theme.bgTop, -0.08), 1, 1, 1, 1);
     g.fillRect(0, 0, w, wallBottom);
     g.fillGradientStyle(
-      shade(COLORS.bgBottom, 0.08),
-      shade(COLORS.bgBottom, 0.08),
-      shade(COLORS.bgBottom, -0.1),
-      shade(COLORS.bgBottom, -0.1),
+      hexToNum(theme.bgBottom),
+      hexToNum(theme.bgBottom),
+      shade(theme.bgBottom, -0.2),
+      shade(theme.bgBottom, -0.2),
       1,
       1,
       1,
@@ -293,7 +289,7 @@ export class RoomScene extends Phaser.Scene {
     g.lineStyle(2, hexToNum(COLORS.ink), 0.7);
     g.strokeCircle(x, y, 5);
 
-    const zone = this.add.zone(x, y, r * 2 + 12, r * 2 + 12).setInteractive({ useHandCursor: true });
+    const zone = this.add.zone(x, y, Math.max(48, r * 2 + 12), Math.max(48, r * 2 + 12)).setInteractive({ useHandCursor: true });
     zone.on('pointerup', () => this.scene.start('SettingsScene'));
   }
 
@@ -564,23 +560,7 @@ export class RoomScene extends Phaser.Scene {
   }
 
   private spawnConfetti(): void {
-    const colors = [COLORS.coral, COLORS.turquoise, COLORS.mustard, COLORS.purple, COLORS.green, COLORS.pink];
-    for (let i = 0; i < 36; i++) {
-      const x = Phaser.Math.Between(20, this.scale.width - 20);
-      const color = hexToNum(colors[i % colors.length]);
-      const piece = this.add.rectangle(x, -20, 8, 14, color, 1).setDepth(210).setAngle(Phaser.Math.Between(0, 360));
-      const delay = Phaser.Math.Between(0, 250);
-      this.time.delayedCall(delay, () => {
-        this.tweens.add({
-          targets: piece,
-          y: this.scale.height + 30,
-          angle: piece.angle + Phaser.Math.Between(180, 540),
-          duration: Phaser.Math.Between(900, 1500),
-          ease: 'Cubic.easeIn',
-          onComplete: () => piece.destroy(),
-        });
-      });
-    }
+    this.confetti.burst(this.scale.width, this.scale.height, prefersReducedMotion());
   }
 
   private onClaimDailyReward(): void {

@@ -1,8 +1,11 @@
 /**
  * Tek tasarım sistemi dosyası -- tüm sahneler renk/radius/gölge/boşluk değerlerini buradan alır.
- * Sabit kodlanmış hex/sayı renkleri sahne dosyalarında tekrar tekrar yazmak yerine hep buraya
- * referans verilir ki paleti tek yerden ayarlamak mümkün olsun.
+ * Gerçek renk DEĞERLERİ `src/config/tuning.ts`te toplanır (tek ayar dosyası); bu dosya onları
+ * Phaser'ın beklediği sayısal forma çevirip radius/spacing/gölge gibi uygulama tokenlarıyla birlikte sunar.
  */
+import { ITEM_ACCENTS as TUNING_ITEM_ACCENTS, PALETTE, ROOM_THEMES } from '../config/tuning';
+
+const ROOM_THEMES_DEFAULT = ROOM_THEMES[0];
 
 /** '#RRGGBB' -> 0xRRGGBB (Phaser Graphics/Text farklı renk formatları bekler, tek kaynaktan üretilir). */
 export function hexToNum(hex: string): number {
@@ -29,45 +32,38 @@ function clamp255(v: number): number {
 export const FONT_FAMILY = 'Fredoka, "Trebuchet MS", sans-serif';
 
 export const COLORS = {
-  // Arkaplan: şeftali-bej -> açık turuncu dikey degrade (krem/düz bej DEĞİL).
-  bgTop: '#FBDCC0',
-  bgBottom: '#FFB980',
+  // Arkaplan varsayılanı: gerçek oyun/oda sahneleri ROOM_THEMES'i (tuning.ts) seviyeye göre
+  // döndürerek kullanır; bu ikisi yalnızca tema almayan sahneler (ör. Ayarlar) için varsayılandır.
+  bgTop: ROOM_THEMES_DEFAULT.bgTop,
+  bgBottom: ROOM_THEMES_DEFAULT.bgBottom,
 
-  ink: '#4A3326', // ana metin
-  inkSoft: '#8A6A52', // ikincil metin
-  cream: '#FFF8F0', // koyu zeminde metin
+  ink: PALETTE.ink,
+  inkSoft: PALETTE.inkSoft,
+  cream: PALETTE.cream,
 
-  surface: '#FFFFFF', // kart/panel zemini (alfa ile kullanılır)
-  surfaceMuted: '#E4D6C5', // yenilenmemiş/pasif zemin
+  surface: PALETTE.surface,
+  surfaceMuted: PALETTE.surfaceMuted,
 
-  // Doygun vurgu paleti (en az 6 -- mercan, turkuaz, hardal, mor, yeşil, pembe + ekstra).
-  coral: '#FF6B52',
-  turquoise: '#1FB8AC',
-  mustard: '#F2A93B',
-  purple: '#9568D8',
-  green: '#4CAF6B',
-  pink: '#F0609C',
-  sky: '#4F8FDB',
-  amber: '#E07C3E',
+  // Doygun vurgu paleti (en az 10 -- mercan, turkuaz, hardal, mor, yeşil, pembe, gök mavisi,
+  // turuncu, bordo, lacivert-mavi). Gerçek değerler tuning.ts'te (tek ayar dosyası).
+  coral: PALETTE.coral,
+  turquoise: PALETTE.turquoise,
+  mustard: PALETTE.mustard,
+  purple: PALETTE.purple,
+  green: PALETTE.green,
+  pink: PALETTE.pink,
+  sky: PALETTE.sky,
+  amber: PALETTE.amber,
+  maroon: PALETTE.maroon,
+  navy: PALETTE.navy,
 
-  gold: '#F5B942', // yıldız
-  success: '#4CAF6B',
-  danger: '#E05B4F',
+  gold: PALETTE.gold, // yıldız
+  success: PALETTE.success,
+  danger: PALETTE.danger,
 } as const;
 
 /** 10 eşya türü için sırayla kullanılan doygun aksan renkleri (itemVisuals.ts bu sırayı ITEM_TYPE_POOL ile eşler). */
-export const ITEM_ACCENTS: readonly string[] = [
-  COLORS.coral,
-  COLORS.turquoise,
-  COLORS.mustard,
-  COLORS.purple,
-  COLORS.green,
-  COLORS.pink,
-  COLORS.sky,
-  COLORS.amber,
-  '#C9556B', // kiremit-bordo
-  '#5FA8A0', // deniz yeşili
-];
+export const ITEM_ACCENTS: readonly string[] = TUNING_ITEM_ACCENTS;
 
 export const RADIUS = {
   sm: 8,
