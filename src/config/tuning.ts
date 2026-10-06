@@ -104,10 +104,18 @@ export const DIFFICULTY = {
     { maxLevel: Infinity, itemTypeRange: [7, 8], emptyContainerRange: [1, 2] },
   ] as readonly DifficultyRangeRule[],
   /** Hamle limiti = sertifika uzunluğu (o seviyeyi gerçekten çözmek için kanıtlanmış gereken hamle
-   * sayısı) + bu sabit pay. Zorlukla orantılı çarpan YOK -- seviye zorlaştıkça sertifika uzunluğu
-   * zaten kendiliğinden büyür, limit de onunla birlikte büyür. Pay sadece 1-2 yanlışı (hamle+geri
-   * al) tolere etmeye yeter; bu kasıtlı olarak sıkı tutulur ki seviye gerçekten kaybedilebilsin. */
+   * sayısı) + bir pay. Zorlukla orantılı ÇARPAN yok -- seviye zorlaştıkça sertifika uzunluğu
+   * zaten kendiliğinden büyür, limit de onunla birlikte büyür. Taban pay (newPlayerTaperEndLevel'den
+   * sonra geçerli) kasıtlı olarak sıkı tutulur ki seviye gerçekten kaybedilebilsin -- bkz. moveLimitFor
+   * (difficultyCurve.ts), bu değeri newPlayer* ayarlarıyla birlikte kullanır. */
   moveLimitBonus: 3,
+  /** Yeni oyuncu rahatlığı: ilk N seviyede (dahil) hamle payı moveLimitBonus yerine bu geniş
+   * değeri kullanır (bkz. Faz 6 -- "ilk 15 seviyede daha rahat"). */
+  newPlayerWideBonusUntilLevel: 15,
+  newPlayerWideBonus: 9,
+  /** Geniş paydan taban moveLimitBonus'a doğrusal daralmanın TAMAMLANACAĞI seviye -- bu seviyeden
+   * itibaren tekrar taban (sıkı) pay geçerli olur. */
+  newPlayerTaperEndLevel: 40,
 
   obstacles: {
     /** Gizemli eşya (yalnızca kabın en üstündeyken yüzü açılır) bu seviyeden itibaren görülebilir. */

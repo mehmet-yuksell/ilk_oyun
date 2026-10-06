@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { levelConfigFor } from './difficultyCurve';
+import { levelConfigFor, moveLimitFor } from './difficultyCurve';
+import { DIFFICULTY } from '../config/tuning';
 
 describe('levelConfigFor', () => {
   it('deterministiktir: aynı seviye numarası her zaman aynı config döner', () => {
@@ -33,5 +34,40 @@ describe('levelConfigFor', () => {
       const c = levelConfigFor(n);
       expect(c.containerCount).toBe(c.itemTypeCount + c.emptyContainerCount);
     }
+  });
+});
+
+describe('moveLimitFor', () => {
+  it('limit her zaman sertifika uzunluğundan büyüktür (seviye hiçbir zaman imkansız olmaz)', () => {
+    for (const level of [1, 15, 16, 40, 41, 100]) {
+      expect(moveLimitFor(level, 10)).toBeGreaterThan(10);
+    }
+  });
+
+  it('ilk newPlayerWideBonusUntilLevel seviyede geniş (yeni oyuncu) pay kullanılır', () => {
+    const cert = 20;
+    for (const level of [1, 10, DIFFICULTY.newPlayerWideBonusUntilLevel]) {
+      expect(moveLimitFor(level, cert)).toBe(cert + DIFFICULTY.newPlayerWideBonus);
+    }
+  });
+
+  it('newPlayerTaperEndLevel ve sonrasında taban (sıkı) pay kullanılır', () => {
+    const cert = 20;
+    for (const level of [DIFFICULTY.newPlayerTaperEndLevel, DIFFICULTY.newPlayerTaperEndLevel + 50]) {
+      expect(moveLimitFor(level, cert)).toBe(cert + DIFFICULTY.moveLimitBonus);
+    }
+  });
+
+  it('iki aralık arasında pay geniş paydan taban paya doğru kademeli (monoton azalan) daralır', () => {
+    const cert = 20;
+    const bonuses: number[] = [];
+    for (let level = DIFFICULTY.newPlayerWideBonusUntilLevel; level <= DIFFICULTY.newPlayerTaperEndLevel; level++) {
+      bonuses.push(moveLimitFor(level, cert) - cert);
+    }
+    for (let i = 1; i < bonuses.length; i++) {
+      expect(bonuses[i]).toBeLessThanOrEqual(bonuses[i - 1]);
+    }
+    expect(bonuses[0]).toBe(DIFFICULTY.newPlayerWideBonus);
+    expect(bonuses[bonuses.length - 1]).toBe(DIFFICULTY.moveLimitBonus);
   });
 });

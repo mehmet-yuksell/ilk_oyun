@@ -33,6 +33,9 @@ import type { Language, TranslationKey } from '../i18n/translations';
 const PROGRESS_LEVEL_STARS = 10;
 const DAILY_PUZZLE_STARS = 15;
 const MYSTERY_TYPE = '__mystery__';
+/** saveData.seenHints'teki engel ipucu anahtarlarıyla (mystery/lock/typeLock) aynı mekanizmayı
+ * paylaşan, ilk-hamle el animasyonu için "bir kere gösterildi" bayrağı. */
+const MOVE_TUTORIAL_HINT_KEY = 'moveTutorial';
 
 export interface GameSceneData {
   readonly mode?: 'progress' | 'daily';
@@ -285,7 +288,9 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointermove', this.onPointerMove, this);
     this.input.on('pointerup', this.onPointerUp, this);
 
-    if (this.sessionMode === 'progress' && this.levelNumber === 1) {
+    if (this.sessionMode === 'progress' && this.levelNumber === 1 && !this.saveData.seenHints.includes(MOVE_TUTORIAL_HINT_KEY)) {
+      this.saveData = { ...this.saveData, seenHints: [...this.saveData.seenHints, MOVE_TUTORIAL_HINT_KEY] };
+      this.saveService.save(this.saveData);
       this.time.delayedCall(500, () => this.startTutorialHand());
     }
 

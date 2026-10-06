@@ -38,12 +38,22 @@ function rangeFor(levelNumber: number): DifficultyRangeRule {
 
 /**
  * Hamle limiti: doğrulanmış sertifika uzunluğu (HER ZAMAN gerçekten tamamlanabilir bir çözümün
- * kanıtıdır) + sabit bir pay. Seviye zorlaştıkça sertifika uzunluğu kendiliğinden büyüdüğü için
- * limit de otomatik artar -- ayrıca bir zorluk çarpanına gerek yok. Pay kasıtlı olarak küçük
- * tutulur (bkz. tuning.ts: DIFFICULTY.moveLimitBonus) ki seviye gerçekten kaybedilebilsin.
+ * kanıtıdır) + bir pay. Seviye zorlaştıkça sertifika uzunluğu kendiliğinden büyüdüğü için limit de
+ * otomatik artar -- ayrıca bir zorluk çarpanına gerek yok. Pay, ilk newPlayerWideBonusUntilLevel
+ * seviyede (yeni oyuncu rahatlığı için) geniş tutulur, sonra newPlayerTaperEndLevel'e kadar
+ * doğrusal olarak taban moveLimitBonus'a daralır -- bu noktadan sonra kasıtlı olarak sıkıdır ki
+ * seviye gerçekten kaybedilebilsin (bkz. tuning.ts: DIFFICULTY).
  */
-export function moveLimitFor(_levelNumber: number, certificateLength: number): number {
-  return certificateLength + DIFFICULTY.moveLimitBonus;
+export function moveLimitFor(levelNumber: number, certificateLength: number): number {
+  return certificateLength + moveLimitBonusForLevel(levelNumber);
+}
+
+function moveLimitBonusForLevel(levelNumber: number): number {
+  const { newPlayerWideBonusUntilLevel, newPlayerWideBonus, newPlayerTaperEndLevel, moveLimitBonus } = DIFFICULTY;
+  if (levelNumber <= newPlayerWideBonusUntilLevel) return newPlayerWideBonus;
+  if (levelNumber >= newPlayerTaperEndLevel) return moveLimitBonus;
+  const t = (levelNumber - newPlayerWideBonusUntilLevel) / (newPlayerTaperEndLevel - newPlayerWideBonusUntilLevel);
+  return Math.round(newPlayerWideBonus + (moveLimitBonus - newPlayerWideBonus) * t);
 }
 
 /**

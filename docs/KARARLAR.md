@@ -189,3 +189,33 @@ Kronolojik sırayla, en eski en üstte.
 - Doğrulama: tsc temiz, 121/121 test yeşil (2 yeni migrasyon testi), build başarılı. Playwright
   ile splash ekranı, splash->oda geçişi, OYNA->oyun->geri->oda tam döngüsü (0 konsol hatası),
   ve enjekte edilmiş kayıtla uçtan uca oda-tamamlama->devam->sonraki oda akışı doğrulandı.
+
+## Faz 6 — Yeni oyuncu deneyimi
+
+- **El animasyonlu öğretici zaten vardı** (önceki bir fazdan: `startTutorialHand()`, metin YOK --
+  yalnızca kaynak-kaptan hedef-kaba giden animasyonlu bir el), ama "bir kere gösterilsin ve
+  kayıtta saklansın" eksikti -- eski tetik koşulu yalnızca `sessionMode==='progress' &&
+  levelNumber===1` idi, yani seviye 1 her tekrar oynandığında (ör. kaybedip "Tekrar Dene" ile
+  değil ama odaya dönüp tekrar "OYNA" ile) yeniden gösteriliyordu. Artık `saveData.seenHints`
+  dizisine `'moveTutorial'` anahtarıyla eklenen, engel ipucu mekanizmasıyla (bkz.
+  `maybeShowObstacleHints`) AYNI düzende bir bayrak var -- gösterilmeden hemen önce kaydediliyor.
+  Playwright ile doğrulandı: ilk oynanışta el görünüyor (ekran görüntüsüyle yakalandı), seviye 1
+  tekrar oynandığında (odaya dönüp OYNA) hiç görünmüyor.
+- **Hamle limiti: yeni oyuncu rahatlığı geri getirildi, ama yalnızca erken seviyelerde.** Bir
+  önceki fazda (bu projenin daha erken bir aşamasında) kullanıcı limiti kasıtlı olarak çok sıkı
+  tutmuştu (par + sabit 3) -- bu görev AÇIKÇA ilk 15 seviyede "geniş pay" istiyor. İkisini
+  birden karşılamak için `moveLimitFor` artık seviyeye göre değişen bir pay kullanıyor
+  (tuning.ts: `newPlayerWideBonusUntilLevel=15`, `newPlayerWideBonus=9`,
+  `newPlayerTaperEndLevel=40`): seviye 1-15'te pay 9 (ör. seviye 1: cert=14, limit=23 -- önceki
+  17'den belirgin biçimde daha rahat), 16-40 arası DOĞRUSAL olarak taban paya (3) daralır, 40+
+  için eski sıkı davranış aynen korunur (kullanıcının "gerçekten kaybedilebilsin" isteği ileri
+  seviyelerde bozulmadı). `difficultyCurve.test.ts`e 4 yeni test eklendi (geniş pay aralığı,
+  taban pay aralığı, monoton daralma, "her zaman certten büyük").
+- **"Tekrar Dene" zaten aynı düzeni veriyordu** -- seviye üretimi tamamen `levelNumber`den
+  türeyen sabit bir tohumla deterministik (`baseSeed + levelNumber*1013904223`), bu da
+  doğrulandı (iki ayrı üretim çağrısı birebir aynı initialState üretti). Kod değişikliği
+  gerekmedi.
+- Doğrulama: tsc temiz, 125/125 test yeşil (4 yeni), build başarılı. Playwright ile: (a) ilk
+  oynanışta öğretici elin göründüğü, ikinci oynanışta görünmediği ekran görüntüleriyle
+  kanıtlandı; (b) gerçek seviye verisiyle yeni hamle payı tablosu (seviye 1/10/15/16/25/40/
+  41/60/100) hesaplanıp kademeli daralma doğrulandı.
