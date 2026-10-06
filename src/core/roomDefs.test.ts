@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ROOMS } from './roomDefs';
 
 describe('ROOMS', () => {
-  it('başlangıçta tam olarak 5 oda tanımlıdır', () => {
-    expect(ROOMS).toHaveLength(5);
+  it('başlangıçta tam olarak 10 oda tanımlıdır', () => {
+    expect(ROOMS).toHaveLength(10);
   });
 
   it('her odada tam olarak 10 yenilenebilir öğe vardır', () => {
