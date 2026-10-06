@@ -38,13 +38,12 @@ function rangeFor(levelNumber: number): DifficultyRangeRule {
 
 /**
  * Hamle limiti: doğrulanmış sertifika uzunluğu (HER ZAMAN gerçekten tamamlanabilir bir çözümün
- * kanıtıdır) üzerine, seviyenin zorluk aralığına göre bir tampon (buffer) eklenir -- erken
- * seviyelerde bol, ileri seviyelerde daha sıkı. Limit asla imkansız olamaz (certificateLength'in
- * altına asla inmez).
+ * kanıtıdır) + sabit bir pay. Seviye zorlaştıkça sertifika uzunluğu kendiliğinden büyüdüğü için
+ * limit de otomatik artar -- ayrıca bir zorluk çarpanına gerek yok. Pay kasıtlı olarak küçük
+ * tutulur (bkz. tuning.ts: DIFFICULTY.moveLimitBonus) ki seviye gerçekten kaybedilebilsin.
  */
-export function moveLimitFor(levelNumber: number, certificateLength: number): number {
-  const { moveLimitBuffer } = rangeFor(levelNumber);
-  return Math.max(certificateLength + 1, Math.ceil(certificateLength * moveLimitBuffer) + DIFFICULTY.moveLimitFlatBonus);
+export function moveLimitFor(_levelNumber: number, certificateLength: number): number {
+  return certificateLength + DIFFICULTY.moveLimitBonus;
 }
 
 /**

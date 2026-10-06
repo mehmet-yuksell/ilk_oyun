@@ -86,10 +86,6 @@ export interface DifficultyRangeRule {
   readonly maxLevel: number;
   readonly itemTypeRange: readonly [number, number];
   readonly emptyContainerRange: readonly [number, number];
-  /** Hamle limiti = ceil(sertifika uzunluğu * bu çarpan) -- erken seviyelerde bol, ileri
-   * seviyelerde daha sıkı (bkz. moveLimitFor, difficultyCurve.ts). Sertifika uzunluğu HER ZAMAN
-   * gerçekten tamamlanabilir bir çözümün kanıtıdır, bu yüzden limit asla imkansız olmaz. */
-  readonly moveLimitBuffer: number;
 }
 
 export const DIFFICULTY = {
@@ -100,15 +96,17 @@ export const DIFFICULTY = {
 
   /** Seviye aralıkları -- tür sayısı ve boş kap sayısı buradan, seviye numarasına göre deterministik seçilir. */
   ranges: [
-    { maxLevel: 5, itemTypeRange: [3, 3], emptyContainerRange: [2, 2], moveLimitBuffer: 2.0 },
-    { maxLevel: 15, itemTypeRange: [4, 5], emptyContainerRange: [2, 2], moveLimitBuffer: 1.7 },
-    { maxLevel: 35, itemTypeRange: [5, 6], emptyContainerRange: [2, 2], moveLimitBuffer: 1.5 },
-    { maxLevel: 70, itemTypeRange: [6, 7], emptyContainerRange: [1, 2], moveLimitBuffer: 1.4 },
-    { maxLevel: Infinity, itemTypeRange: [7, 8], emptyContainerRange: [1, 2], moveLimitBuffer: 1.3 },
+    { maxLevel: 5, itemTypeRange: [3, 3], emptyContainerRange: [2, 2] },
+    { maxLevel: 15, itemTypeRange: [4, 5], emptyContainerRange: [2, 2] },
+    { maxLevel: 35, itemTypeRange: [5, 6], emptyContainerRange: [2, 2] },
+    { maxLevel: 70, itemTypeRange: [6, 7], emptyContainerRange: [1, 2] },
+    { maxLevel: Infinity, itemTypeRange: [7, 8], emptyContainerRange: [1, 2] },
   ] as readonly DifficultyRangeRule[],
-  /** moveLimitBuffer'a ek olarak her zaman eklenen sabit pay (çok kısa seviyelerde çarpan tek
-   * başına yeterli nefes alanı bırakmayabilir). */
-  moveLimitFlatBonus: 2,
+  /** Hamle limiti = sertifika uzunluğu (o seviyeyi gerçekten çözmek için kanıtlanmış gereken hamle
+   * sayısı) + bu sabit pay. Zorlukla orantılı çarpan YOK -- seviye zorlaştıkça sertifika uzunluğu
+   * zaten kendiliğinden büyür, limit de onunla birlikte büyür. Pay sadece 1-2 yanlışı (hamle+geri
+   * al) tolere etmeye yeter; bu kasıtlı olarak sıkı tutulur ki seviye gerçekten kaybedilebilsin. */
+  moveLimitBonus: 3,
 
   obstacles: {
     /** Gizemli eşya (yalnızca kabın en üstündeyken yüzü açılır) bu seviyeden itibaren görülebilir. */
