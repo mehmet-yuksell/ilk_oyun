@@ -9,6 +9,13 @@ export type AnalyticsEvent =
       readonly undoCount: number;
     }
   | { readonly name: 'level_stuck'; readonly levelNumber: number }
+  | {
+      readonly name: 'level_lost';
+      readonly levelNumber: number;
+      readonly moveCount: number;
+      readonly undoCount: number;
+      readonly moveLimit: number;
+    }
   | { readonly name: 'booster_used'; readonly booster: 'extra-container' | 'undo' }
   | { readonly name: 'ad_offered'; readonly placement: string }
   | { readonly name: 'ad_watched'; readonly placement: string }

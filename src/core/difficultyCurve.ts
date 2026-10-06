@@ -1,4 +1,4 @@
-import { DIFFICULTY } from '../config/tuning';
+import { DIFFICULTY, type DifficultyRangeRule } from '../config/tuning';
 import { ITEM_TYPE_POOL } from './itemTypePool';
 import type { LevelConfig } from './levelGenerator';
 
@@ -29,11 +29,22 @@ export function obstaclesForLevel(levelNumber: number, isBreather: boolean): rea
   return picked;
 }
 
-function rangeFor(levelNumber: number): { itemTypeRange: readonly [number, number]; emptyContainerRange: readonly [number, number] } {
+function rangeFor(levelNumber: number): DifficultyRangeRule {
   for (const rule of DIFFICULTY.ranges) {
     if (levelNumber <= rule.maxLevel) return rule;
   }
   return DIFFICULTY.ranges[DIFFICULTY.ranges.length - 1];
+}
+
+/**
+ * Hamle limiti: doğrulanmış sertifika uzunluğu (HER ZAMAN gerçekten tamamlanabilir bir çözümün
+ * kanıtıdır) üzerine, seviyenin zorluk aralığına göre bir tampon (buffer) eklenir -- erken
+ * seviyelerde bol, ileri seviyelerde daha sıkı. Limit asla imkansız olamaz (certificateLength'in
+ * altına asla inmez).
+ */
+export function moveLimitFor(levelNumber: number, certificateLength: number): number {
+  const { moveLimitBuffer } = rangeFor(levelNumber);
+  return Math.max(certificateLength + 1, Math.ceil(certificateLength * moveLimitBuffer) + DIFFICULTY.moveLimitFlatBonus);
 }
 
 /**

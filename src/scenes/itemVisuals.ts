@@ -33,8 +33,10 @@ function gloss(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, 
   g.fillEllipse(x, y, w, h);
 }
 
+/** Not: üst tonu fazla AÇMAK (ör. +0.3) gövdeyi beyaza yakınlaştırıp "soluk" bir pastel hissi verir
+ * -- bu yüzden üst ton hafifçe açılır, alt ton ise derinlik için belirgin koyultulur. */
 function gradientBody(g: Phaser.GameObjects.Graphics, accent: string): void {
-  g.fillGradientStyle(shade(accent, 0.3), shade(accent, 0.3), shade(accent, -0.18), shade(accent, -0.18), 1, 1, 1, 1);
+  g.fillGradientStyle(shade(accent, 0.14), shade(accent, 0.14), shade(accent, -0.3), shade(accent, -0.3), 1, 1, 1, 1);
 }
 
 /** Her çizimin koyu aksan tonunda ince bir dış kontur bırakması için paylaşılan yardımcı. */

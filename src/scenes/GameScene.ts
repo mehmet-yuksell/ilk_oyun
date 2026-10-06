@@ -10,7 +10,7 @@ import {
 } from '../core/gameLogic';
 import { UndoStack } from '../core/undoStack';
 import { createDemoLevel } from '../core/levels/demoLevel';
-import { levelConfigFor } from '../core/difficultyCurve';
+import { levelConfigFor, moveLimitFor } from '../core/difficultyCurve';
 import { dailyPuzzleConfig } from '../core/dailyPuzzle';
 import { todayKey } from '../core/dailyReward';
 import { generateVerifiedLevel } from '../core/levelGenerator';
@@ -54,6 +54,8 @@ interface LoadedLevel {
   readonly obstacles: ActiveObstacles;
   readonly par: number;
   readonly parExact: boolean;
+  /** 0 = limitsiz (demo/debug). progress/daily'de her zaman >0 -- bkz. moveLimitFor. */
+  readonly moveLimit: number;
 }
 
 // "Taban" (en fazla 2 satır / 6 kap olan erken seviyeler için) boyutlar. Daha fazla kap
@@ -126,6 +128,8 @@ export class GameScene extends Phaser.Scene {
 
   private mysteryActive = false;
   private par = 0;
+  private moveLimit = 0;
+  private gameOver = false;
   private extraContainerUsedThisLevel = false;
 
   private framesLayer!: Phaser.GameObjects.Container;
@@ -164,6 +168,8 @@ export class GameScene extends Phaser.Scene {
     this.levelNumber = data.levelNumber ?? getDebugLevelParam() ?? null;
     this.mysteryActive = loaded.obstacles.mystery;
     this.par = loaded.par;
+    this.moveLimit = loaded.moveLimit;
+    this.gameOver = false;
     this.undoStack = new UndoStack<GameState>();
     this.layouts = new Map();
     this.selectedId = null;
@@ -290,7 +296,8 @@ export class GameScene extends Phaser.Scene {
       const result = generateVerifiedLevel(levelConfigFor(debugLevel));
       const lockNote = result.hasLock ? t('lockedContainerNote', this.lang) : '';
       const { par, exact } = computePar(result.initialState, result.verifiedMoveCount, DIFFICULTY.livePaSolverMaxStates);
-      const parNote = ` par=${par}${exact ? '' : '~'}`;
+      const moveLimit = moveLimitFor(debugLevel, result.verifiedMoveCount);
+      const parNote = ` par=${par}${exact ? '' : '~'} limit=${moveLimit}`;
       return {
         state: result.initialState,
         mode: 'debug',
@@ -298,6 +305,7 @@ export class GameScene extends Phaser.Scene {
         obstacles: { mystery: result.mysteryActive, lock: result.hasLock, typeLock: result.hasTypeLock },
         par,
         parExact: exact,
+        moveLimit,
       };
     }
 
@@ -311,6 +319,7 @@ export class GameScene extends Phaser.Scene {
         obstacles: { mystery: result.mysteryActive, lock: result.hasLock, typeLock: result.hasTypeLock },
         par,
         parExact: exact,
+        moveLimit: moveLimitFor(15, result.verifiedMoveCount),
       };
     }
 
@@ -325,10 +334,19 @@ export class GameScene extends Phaser.Scene {
         obstacles: { mystery: result.mysteryActive, lock: result.hasLock, typeLock: result.hasTypeLock },
         par,
         parExact: exact,
+        moveLimit: moveLimitFor(data.levelNumber, result.verifiedMoveCount),
       };
     }
 
-    return { state: createDemoLevel(), mode: 'demo', label: t('demoLevelLabel', this.lang), obstacles: noObstacles, par: 0, parExact: true };
+    return {
+      state: createDemoLevel(),
+      mode: 'demo',
+      label: t('demoLevelLabel', this.lang),
+      obstacles: noObstacles,
+      par: 0,
+      parExact: true,
+      moveLimit: 0,
+    };
   }
 
   /** Haptic + ses geri bildirimini tek yerden, ayarlara saygılı biçimde tetikler. */
@@ -892,11 +910,24 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** moveLimit>0 olan modlarda (progress/daily/debug), undo da dahil edilerek (bkz. onUndo) hamle
+   * bütçesi tükendi mi kontrol eder. demo modunda moveLimit=0 olduğu için hiç tetiklenmez. */
+  private isOutOfMoves(): boolean {
+    if (this.moveLimit <= 0 || this.gameOver) return false;
+    return this.moveCount + this.undoCount >= this.moveLimit;
+  }
+
   private checkStuckOrWin(): void {
     if (isLevelComplete(this.gameState)) {
       this.wasStuck = false;
       this.hideStuckBanner();
       this.onLevelWon();
+      return;
+    }
+    if (this.isOutOfMoves()) {
+      this.wasStuck = false;
+      this.hideStuckBanner();
+      this.onLevelLost();
       return;
     }
     if (isStuck(this.gameState)) {
@@ -1082,6 +1113,149 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });
+  }
+
+  private onLevelLost(): void {
+    this.gameOver = true;
+    this.isAnimating = true;
+    this.feedback('invalid');
+    this.analytics.track({
+      name: 'level_lost',
+      levelNumber: this.levelNumber ?? 0,
+      moveCount: this.moveCount,
+      undoCount: this.undoCount,
+      moveLimit: this.moveLimit,
+    });
+    this.showLevelLostPanel();
+  }
+
+  /** Hamle hakkı bitince: süslü (çentikli, altın kenarlıklı) bir kurdele üzerinde "KAYBETTİNİZ",
+   * ardından "Tekrar Dene" (aynı seviyeyi yeniden başlatır) / "Odaya Dön". */
+  private showLevelLostPanel(): void {
+    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x1a1020, 0).setOrigin(0, 0).setDepth(300);
+    this.tweens.add({ targets: overlay, fillAlpha: 0.6, duration: 220 });
+
+    const panelW = Math.min(this.scale.width - 56, 340);
+    const panelH = 340;
+    const panel = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(hexToNum(COLORS.surface), 1);
+    bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
+    bg.lineStyle(3, hexToNum(COLORS.danger), 0.6);
+    bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
+    panel.add(bg);
+
+    // Süslü şerit: paneli çaprazlamasına kesen, çentikli (kurdele) uçlu bir bant.
+    const ribbon = this.add.container(0, -panelH / 2 + 56).setAngle(-8);
+    const ribbonW = panelW + 70;
+    const ribbonH = 54;
+    const rg = this.add.graphics();
+    rg.fillGradientStyle(
+      hexToNum(COLORS.danger),
+      hexToNum(COLORS.danger),
+      shade(COLORS.danger, -0.28),
+      shade(COLORS.danger, -0.28),
+      1,
+      1,
+      1,
+      1,
+    );
+    rg.fillRect(-ribbonW / 2, -ribbonH / 2, ribbonW, ribbonH);
+    rg.fillStyle(0xffffff, 0.16);
+    rg.fillRect(-ribbonW / 2, -ribbonH / 2, ribbonW, ribbonH * 0.4);
+    // çentikli (notch) uçlar -- klasik kurdele kesimi
+    rg.fillStyle(hexToNum(COLORS.surface), 1);
+    for (const side of [-1, 1] as const) {
+      const tipX = side * (ribbonW / 2);
+      rg.fillTriangle(tipX, -ribbonH / 2, tipX, ribbonH / 2, tipX - side * 16, 0);
+    }
+    rg.lineStyle(2, hexToNum(COLORS.gold), 0.9);
+    rg.strokeRect(-ribbonW / 2, -ribbonH / 2, ribbonW, ribbonH);
+    ribbon.add(rg);
+    ribbon.add(
+      this.add
+        .text(0, 1, t('levelLostTitle', this.lang), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '23px',
+          fontStyle: '700',
+          color: COLORS.cream,
+          stroke: '#000000',
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5),
+    );
+    panel.add(ribbon);
+
+    panel.add(
+      this.add
+        .text(0, -10, t('levelLostBody', this.lang, { limit: this.moveLimit }), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '14px',
+          color: COLORS.inkSoft,
+          align: 'center',
+          wordWrap: { width: panelW - 60 },
+        })
+        .setOrigin(0.5),
+    );
+
+    // Birincil: Tekrar Dene (aynı seviyeyi yeniden başlatır).
+    const btnY = panelH / 2 - 56;
+    const btnW = panelW - 64;
+    const btnH = 56;
+    const btnBg = this.add.graphics();
+    btnBg.fillStyle(hexToNum(COLORS.coral), 1);
+    btnBg.fillRoundedRect(-btnW / 2, btnY - btnH / 2, btnW, btnH, btnH / 2);
+    btnBg.fillStyle(0xffffff, 0.18);
+    btnBg.fillRoundedRect(-btnW / 2 + 8, btnY - btnH / 2 + 5, btnW - 16, btnH * 0.4, btnH * 0.3);
+    panel.add(btnBg);
+    panel.add(
+      this.add
+        .text(0, btnY, t('retryButton', this.lang), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '19px',
+          fontStyle: '600',
+          color: COLORS.cream,
+        })
+        .setOrigin(0.5),
+    );
+    const retryZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
+    retryZone.on('pointerup', () => {
+      overlay.destroy();
+      panel.destroy();
+      retryZone.destroy();
+      this.restartSameLevel();
+    });
+
+    // İkincil: Odaya Dön.
+    const backY = btnY - 46;
+    const backText = this.add
+      .text(0, backY, t('backToRoomButton', this.lang), {
+        fontFamily: 'Fredoka, sans-serif',
+        fontSize: '14px',
+        color: COLORS.inkSoft,
+        fontStyle: '600',
+      })
+      .setOrigin(0.5)
+      .setInteractive(new Phaser.Geom.Rectangle(-80, -24, 160, 48), Phaser.Geom.Rectangle.Contains);
+    panel.add(backText);
+    backText.on('pointerup', () => {
+      overlay.destroy();
+      panel.destroy();
+      this.scene.start('RoomScene');
+    });
+
+    this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });
+  }
+
+  private restartSameLevel(): void {
+    if (this.sessionMode === 'progress' && this.levelNumber !== null) {
+      this.scene.start('GameScene', { mode: 'progress', levelNumber: this.levelNumber });
+    } else if (this.sessionMode === 'daily') {
+      this.scene.start('GameScene', { mode: 'daily' });
+    } else {
+      this.scene.restart();
+    }
   }
 
   private maybeShowInterstitialThenGoToRoom(): void {
@@ -1407,9 +1581,14 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    this.statusSubText.setText(
-      `${t('moveLabel', this.lang)}: ${this.moveCount}   ${t('remainingItemsLabel', this.lang)}: ${total}`,
-    );
+    const effectiveMoves = this.moveCount + this.undoCount;
+    const moveText =
+      this.moveLimit > 0
+        ? `${t('moveLabel', this.lang)}: ${effectiveMoves}/${this.moveLimit}`
+        : `${t('moveLabel', this.lang)}: ${this.moveCount}`;
+    this.statusSubText.setText(`${moveText}   ${t('remainingItemsLabel', this.lang)}: ${total}`);
+    const movesLeft = this.moveLimit > 0 ? this.moveLimit - effectiveMoves : Infinity;
+    this.statusSubText.setColor(movesLeft <= 3 ? COLORS.danger : COLORS.inkSoft);
   }
 
   private spawnItemVisual(type: string, x: number, y: number): Phaser.GameObjects.Container {

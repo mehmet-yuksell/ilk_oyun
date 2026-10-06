@@ -14,13 +14,16 @@ export interface RoomTheme {
   readonly bgBottom: string;
 }
 
-/** Her 10 seviyede bir sırayla değişen canlı, doygun degrade arkaplan temaları. */
+/**
+ * Her 10 seviyede bir sırayla değişen canlı, doygun degrade arkaplan temaları. Her iki durak da
+ * (üst/alt) DOYGUN tutulur -- üstte soluk/pastel bir ton YOK, aksi halde arkaplan "soluk" okunur.
+ */
 export const ROOM_THEMES: readonly RoomTheme[] = [
-  { bgTop: '#FFC88A', bgBottom: '#FF6F59' }, // şeftali-pembe -> mercan
-  { bgTop: '#7FE8DE', bgBottom: '#3B86D9' }, // turkuaz -> mavi
-  { bgTop: '#D9A8F5', bgBottom: '#FF5FA8' }, // mor -> pembe
-  { bgTop: '#F5EE7A', bgBottom: '#FF9F1C' }, // limon -> turuncu
-  { bgTop: '#A0EFAE', bgBottom: '#1FB8AC' }, // mint -> turkuaz-yeşil
+  { bgTop: '#FF8C4A', bgBottom: '#FF3B52' }, // doygun turuncu-şeftali -> doygun mercan-kırmızı
+  { bgTop: '#1FE0C2', bgBottom: '#1D6FE0' }, // doygun turkuaz -> doygun mavi
+  { bgTop: '#C158FF', bgBottom: '#FF2E95' }, // doygun mor -> doygun pembe
+  { bgTop: '#F5D91A', bgBottom: '#FF8A1C' }, // doygun limon -> doygun turuncu
+  { bgTop: '#2FE070', bgBottom: '#0FADA0' }, // doygun çimen yeşili -> doygun turkuaz-yeşil
 ] as const;
 
 /** Tema her THEME_CHANGE_EVERY_LEVELS seviyede bir döner (seviye 1-10 -> tema 0, 11-20 -> tema 1, ...). */
@@ -83,6 +86,10 @@ export interface DifficultyRangeRule {
   readonly maxLevel: number;
   readonly itemTypeRange: readonly [number, number];
   readonly emptyContainerRange: readonly [number, number];
+  /** Hamle limiti = ceil(sertifika uzunluğu * bu çarpan) -- erken seviyelerde bol, ileri
+   * seviyelerde daha sıkı (bkz. moveLimitFor, difficultyCurve.ts). Sertifika uzunluğu HER ZAMAN
+   * gerçekten tamamlanabilir bir çözümün kanıtıdır, bu yüzden limit asla imkansız olmaz. */
+  readonly moveLimitBuffer: number;
 }
 
 export const DIFFICULTY = {
@@ -93,12 +100,15 @@ export const DIFFICULTY = {
 
   /** Seviye aralıkları -- tür sayısı ve boş kap sayısı buradan, seviye numarasına göre deterministik seçilir. */
   ranges: [
-    { maxLevel: 5, itemTypeRange: [3, 3], emptyContainerRange: [2, 2] },
-    { maxLevel: 15, itemTypeRange: [4, 5], emptyContainerRange: [2, 2] },
-    { maxLevel: 35, itemTypeRange: [5, 6], emptyContainerRange: [2, 2] },
-    { maxLevel: 70, itemTypeRange: [6, 7], emptyContainerRange: [1, 2] },
-    { maxLevel: Infinity, itemTypeRange: [7, 8], emptyContainerRange: [1, 2] },
+    { maxLevel: 5, itemTypeRange: [3, 3], emptyContainerRange: [2, 2], moveLimitBuffer: 2.4 },
+    { maxLevel: 15, itemTypeRange: [4, 5], emptyContainerRange: [2, 2], moveLimitBuffer: 2.0 },
+    { maxLevel: 35, itemTypeRange: [5, 6], emptyContainerRange: [2, 2], moveLimitBuffer: 1.75 },
+    { maxLevel: 70, itemTypeRange: [6, 7], emptyContainerRange: [1, 2], moveLimitBuffer: 1.6 },
+    { maxLevel: Infinity, itemTypeRange: [7, 8], emptyContainerRange: [1, 2], moveLimitBuffer: 1.45 },
   ] as readonly DifficultyRangeRule[],
+  /** moveLimitBuffer'a ek olarak her zaman eklenen sabit pay (çok kısa seviyelerde çarpan tek
+   * başına yeterli nefes alanı bırakmayabilir). */
+  moveLimitFlatBonus: 3,
 
   obstacles: {
     /** Gizemli eşya (yalnızca kabın en üstündeyken yüzü açılır) bu seviyeden itibaren görülebilir. */

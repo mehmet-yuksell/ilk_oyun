@@ -21,6 +21,13 @@ export const translations = {
   comboText3: { tr: 'Müthiş!', en: 'Awesome!' },
   comboText4Plus: { tr: 'Muhteşem!', en: 'Amazing!' },
   nextLevelButton: { tr: 'Sonraki Seviye', en: 'Next Level' },
+  levelLostTitle: { tr: 'KAYBETTİNİZ', en: 'YOU LOST' },
+  levelLostBody: {
+    tr: '{limit} hamle hakkınız bitti. Tekrar deneyebilirsiniz!',
+    en: 'You used all {limit} moves. Give it another try!',
+  },
+  retryButton: { tr: 'Tekrar Dene', en: 'Try Again' },
+  backToRoomButton: { tr: 'Odaya Dön', en: 'Back to Room' },
   starsEarnedLabel: { tr: '+{stars} yıldız', en: '+{stars} stars' },
   hintMysteryTitle: { tr: 'Gizemli eşya', en: 'Mystery item' },
   hintMysteryBody: {
