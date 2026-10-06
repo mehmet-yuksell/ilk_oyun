@@ -1,11 +1,11 @@
 export type Language = 'tr' | 'en';
 
 export const translations = {
-  appTitle: { tr: 'Yerli Yerinde', en: 'Everything In Its Place' },
+  appTitle: { tr: 'Cozy Sort', en: 'Cozy Sort' },
   moveLabel: { tr: 'Hamle', en: 'Moves' },
   remainingItemsLabel: { tr: 'Kalan eşya', en: 'Items left' },
   undoButton: { tr: 'Geri Al', en: 'Undo' },
-  extraContainerButton: { tr: 'Ekstra Kap', en: 'Extra Bin' },
+  extraContainerButton: { tr: 'Ekstra Kap ({remaining})', en: 'Extra Bin ({remaining})' },
   stuckBanner: { tr: 'Hamle kalmadı — Geri Al ya da Ekstra Kap dene!', en: 'No moves left — try Undo or an Extra Bin!' },
   backToRoom: { tr: 'Oda', en: 'Room' },
   levelCompleteWithStars: { tr: 'Seviye tamamlandı! +{stars} yıldız', en: 'Level complete! +{stars} stars' },
@@ -13,7 +13,7 @@ export const translations = {
   dailyPuzzleCompleteWithStars: { tr: 'Günlük bulmaca bitti! +{stars} yıldız', en: 'Daily puzzle complete! +{stars} stars' },
   dailyPuzzleLabel: { tr: 'Günlük Bulmaca', en: 'Daily Puzzle' },
   levelLabel: { tr: 'Seviye {n}', en: 'Level {n}' },
-  demoLevelLabel: { tr: 'Faz 1 demo seviyesi — placeholder görseller', en: 'Phase 1 demo level — placeholder visuals' },
+  demoLevelLabel: { tr: 'Örnek seviye', en: 'Sample level' },
   generatedLevelLabel: { tr: 'Üretilmiş seviye #{n}', en: 'Generated level #{n}' },
   lockedContainerNote: { tr: ', kilitli kap var', en: ', has a locked bin' },
   comboLabel: { tr: 'Combo x{n}!', en: 'Combo x{n}!' },
@@ -64,12 +64,7 @@ export const translations = {
   hapticLabel: { tr: 'Titreşim', en: 'Haptics' },
   onLabel: { tr: 'Açık', en: 'On' },
   offLabel: { tr: 'Kapalı', en: 'Off' },
-  removeAdsButton: { tr: 'Reklamları Kaldır', en: 'Remove Ads' },
-  removeAdsPurchased: { tr: 'Satın Alındı', en: 'Purchased' },
   closeButton: { tr: 'Kapat', en: 'Close' },
-  watchAdDoubleStars: { tr: 'İzle: Yıldızları 2 Katla', en: 'Watch: Double Stars' },
-  watchAdDoubleDailyReward: { tr: 'İzle: Katla', en: 'Watch: Double' },
-  mockAdOverlay: { tr: 'Reklam oynatılıyor (mock)…', en: 'Playing ad (mock)…' },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

@@ -4,8 +4,12 @@ import { createInitialRoomProgress } from '../core/room';
 import { ROOMS } from '../core/roomDefs';
 import type { Language } from '../i18n/translations';
 
+/** Geçmiş sürümler: v1 bir `removeAdsPurchased: boolean` alanı içeriyordu (reklam/IAP katmanı
+ * kaldırılınca atıldı). migrateSaveData() eski kayıtlarda bu alan hâlâ varsa sessizce yok sayar. */
+export const SAVE_DATA_VERSION = 2;
+
 export interface SaveData {
-  readonly version: 1;
+  readonly version: typeof SAVE_DATA_VERSION;
   readonly stars: number;
   /** Bir sonraki oynanacak ana ilerleme seviyesi (1'den başlar). */
   readonly currentLevel: number;
@@ -16,15 +20,13 @@ export interface SaveData {
   readonly language: Language;
   readonly soundEnabled: boolean;
   readonly hapticEnabled: boolean;
-  /** Mock IAP yer tutucusu: gerçek ödeme SDK'sı yok, Ayarlar ekranından anında "satın alınmış" sayılır. */
-  readonly removeAdsPurchased: boolean;
   /** Daha önce ipucu balonu gösterilmiş engel türleri ('mystery'|'lock'|'typeLock') -- her biri yalnızca ilk görüldüğünde anlatılır. */
   readonly seenHints: readonly string[];
 }
 
 export function createDefaultSaveData(): SaveData {
   return {
-    version: 1,
+    version: SAVE_DATA_VERSION,
     stars: 0,
     currentLevel: 1,
     currentRoomIndex: 0,
@@ -33,9 +35,29 @@ export function createDefaultSaveData(): SaveData {
     language: 'tr',
     soundEnabled: true,
     hapticEnabled: true,
-    removeAdsPurchased: false,
     seenHints: [],
   };
+}
+
+/**
+ * Eski (ör. v1) bir kayıttan gelen BİLİNMEYEN/kaldırılmış alanları (ör. eski removeAdsPurchased)
+ * sessizce atar: yalnızca güncel SaveData şeklinde var olan anahtarlar, değeri tanımlıysa, mevcut
+ * varsayılanın üzerine yazılır. Böylece sürüm alanı ne olursa olsun kayıt her zaman güncel şekle
+ * geçer -- kilitlenme veya veri kaybı olmadan.
+ */
+export function migrateSaveData(raw: unknown): SaveData {
+  const defaults = createDefaultSaveData();
+  if (!raw || typeof raw !== 'object') return defaults;
+
+  const partial = raw as Record<string, unknown>;
+  const merged: Record<string, unknown> = { ...defaults };
+  for (const key of Object.keys(defaults)) {
+    if (partial[key] !== undefined) {
+      merged[key] = partial[key];
+    }
+  }
+  merged.version = SAVE_DATA_VERSION;
+  return merged as unknown as SaveData;
 }
 
 export interface SaveService {
@@ -64,9 +86,7 @@ export class LocalStorageSaveService implements SaveService {
     const raw = this.storage.getItem(this.key);
     if (!raw) return createDefaultSaveData();
     try {
-      const parsed = JSON.parse(raw) as Partial<SaveData>;
-      // Eksik alanlar (ör. ileride eklenen yeni bir alan) varsayılana düşer -- basit ileriye dönük uyumluluk.
-      return { ...createDefaultSaveData(), ...parsed };
+      return migrateSaveData(JSON.parse(raw));
     } catch {
       return createDefaultSaveData();
     }

@@ -24,7 +24,6 @@ import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { type HapticService, WebVibrationHapticService } from '../services/HapticService';
 import { type SoundService, WebAudioSoundService } from '../services/SoundService';
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
-import { type AdService, MockAdService, type RewardedPlacement, shouldShowInterstitial } from '../services/AdService';
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { t } from '../i18n/translations';
 import type { Language, TranslationKey } from '../i18n/translations';
@@ -87,6 +86,7 @@ interface Layout {
 
 interface Button {
   readonly setEnabled: (enabled: boolean) => void;
+  readonly setLabel: (label: string) => void;
 }
 
 const INK = hexToNum(COLORS.ink);
@@ -96,7 +96,6 @@ export class GameScene extends Phaser.Scene {
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
   private readonly hapticService: HapticService = new WebVibrationHapticService();
   private readonly soundService: SoundService = new WebAudioSoundService();
-  private readonly adService: AdService = new MockAdService();
   private readonly analytics: AnalyticsService = new ConsoleAnalyticsService();
 
   // Aşağıdaki alanların hepsi create()'de sıfırdan atanır: Phaser sahne örneğini
@@ -130,7 +129,7 @@ export class GameScene extends Phaser.Scene {
   private par = 0;
   private moveLimit = 0;
   private gameOver = false;
-  private extraContainerUsedThisLevel = false;
+  private extraContainerUsesLeft = 0;
 
   private framesLayer!: Phaser.GameObjects.Container;
   private itemsLayer!: Phaser.GameObjects.Container;
@@ -182,7 +181,7 @@ export class GameScene extends Phaser.Scene {
     this.dragRunLength = 0;
     this.dragging = false;
     this.moveCount = 0;
-    this.extraContainerUsedThisLevel = false;
+    this.extraContainerUsesLeft = DIFFICULTY.extraContainerFreeUsesPerLevel;
     this.tutorialActive = false;
     this.tutorialHand = undefined;
     this.tutorialTimers = [];
@@ -268,10 +267,11 @@ export class GameScene extends Phaser.Scene {
     this.extraContainerButton = this.createButton(
       this.scale.width / 2 + (BUTTON_WIDTH + 20) / 2,
       buttonY,
-      t('extraContainerButton', this.lang),
+      this.extraContainerLabel(),
       'plus',
       () => this.onAddExtraContainer(),
     );
+    this.extraContainerButton.setEnabled(this.extraContainerUsesLeft > 0);
 
     this.undoButton.setEnabled(false);
     this.refreshAll();
@@ -501,6 +501,9 @@ export class GameScene extends Phaser.Scene {
         draw(value);
         text.setAlpha(value ? 1 : 0.6);
         text.setColor(value ? COLORS.cream : COLORS.inkSoft);
+      },
+      setLabel: (value: string) => {
+        text.setText(value);
       },
     };
   }
@@ -850,34 +853,21 @@ export class GameScene extends Phaser.Scene {
     this.checkStuckOrWin();
   }
 
-  /** "Ekstra Kap" seviye başına en fazla 1 kez verilir; ilk DIFFICULTY.extraContainerFreeUntilLevel
-   * seviyede ücretsizdir, sonrasında mock ödüllü reklam karşılığında. */
+  /** "Ekstra Kap" seviye başına DIFFICULTY.extraContainerFreeUsesPerLevel kadar ücretsiz hak
+   * verir (reklam/satın alma yok); kalan hak sayısı butonun üzerinde gösterilir. */
   private onAddExtraContainer(): void {
-    if (this.isAnimating || this.extraContainerUsedThisLevel) return;
+    if (this.isAnimating || this.extraContainerUsesLeft <= 0) return;
+    this.grantExtraContainer();
+  }
 
-    const isFree = (this.levelNumber ?? Infinity) <= DIFFICULTY.extraContainerFreeUntilLevel;
-    if (isFree) {
-      this.grantExtraContainer();
-      return;
-    }
-
-    this.isAnimating = true;
-    const placement: RewardedPlacement = 'extra-container';
-    this.analytics.track({ name: 'ad_offered', placement });
-
-    this.showMockAdOverlay(() => {
-      void this.adService.showRewarded(placement).then((watched) => {
-        this.isAnimating = false;
-        if (!watched) return;
-        this.analytics.track({ name: 'ad_watched', placement });
-        this.grantExtraContainer();
-      });
-    });
+  private extraContainerLabel(): string {
+    return t('extraContainerButton', this.lang, { remaining: this.extraContainerUsesLeft });
   }
 
   private grantExtraContainer(): void {
-    this.extraContainerUsedThisLevel = true;
-    this.extraContainerButton.setEnabled(false);
+    this.extraContainerUsesLeft--;
+    this.extraContainerButton.setLabel(this.extraContainerLabel());
+    this.extraContainerButton.setEnabled(this.extraContainerUsesLeft > 0);
     this.analytics.track({ name: 'booster_used', booster: 'extra-container' });
 
     const capacity = this.gameState.containers[0]?.capacity ?? 4;
@@ -887,27 +877,6 @@ export class GameScene extends Phaser.Scene {
     this.feedback('medium');
     this.refreshAll();
     this.checkStuckOrWin();
-  }
-
-  private showMockAdOverlay(onDone: () => void): void {
-    const overlay = this.add
-      .rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.75)
-      .setOrigin(0, 0)
-      .setDepth(300);
-    const text = this.add
-      .text(this.scale.width / 2, this.scale.height / 2, t('mockAdOverlay', this.lang), {
-        fontFamily: 'Fredoka, sans-serif',
-        fontSize: '18px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5)
-      .setDepth(301);
-
-    this.time.delayedCall(450, () => {
-      overlay.destroy();
-      text.destroy();
-      onDone();
-    });
   }
 
   /** moveLimit>0 olan modlarda (progress/daily/debug), undo da dahil edilerek (bkz. onUndo) hamle
@@ -975,12 +944,12 @@ export class GameScene extends Phaser.Scene {
     const effectiveMoves = this.moveCount + this.undoCount;
     const rating = this.par <= 0 ? 3 : effectiveMoves <= this.par ? 3 : effectiveMoves <= this.par * 1.3 ? 2 : 1;
 
-    this.showLevelCompletePanel(rating, awarded, saved);
+    this.showLevelCompletePanel(rating, awarded);
   }
 
   /** Seviye bitiş paneli: 1-3 derecelendirme yıldızı sırayla belirir, kazanılan yıldız sayacı sayar,
-   * büyük "Sonraki Seviye" butonu + reklamla katlama ikincil bağlantısı. */
-  private showLevelCompletePanel(rating: number, awarded: number, savedAfterBase: SaveData): void {
+   * büyük "Sonraki Seviye" butonu. */
+  private showLevelCompletePanel(rating: number, awarded: number): void {
     const reduced = prefersReducedMotion();
     this.confetti.burst(this.scale.width, this.scale.height, reduced);
 
@@ -1049,41 +1018,6 @@ export class GameScene extends Phaser.Scene {
       onUpdate: () => counterText.setText(`+${Math.round(counterProxy.n)}`),
     });
 
-    // İkincil: reklamla katlama (isteğe bağlı, paneli kapatmaz).
-    const placement: RewardedPlacement = this.sessionMode === 'daily' ? 'double-daily-reward' : 'double-stars';
-    const labelKey = this.sessionMode === 'daily' ? 'watchAdDoubleDailyReward' : 'watchAdDoubleStars';
-    let doubled = false;
-    let currentSaved = savedAfterBase;
-    const doubleLink = this.add
-      .text(0, counterY + 34, t(labelKey, this.lang), {
-        fontFamily: 'Fredoka, sans-serif',
-        fontSize: '13px',
-        color: COLORS.turquoise,
-        fontStyle: '600',
-      })
-      .setOrigin(0.5)
-      .setInteractive(new Phaser.Geom.Rectangle(-70, -24, 140, 48), Phaser.Geom.Rectangle.Contains);
-    panel.add(doubleLink);
-    doubleLink.on('pointerup', () => {
-      if (doubled) return;
-      doubled = true;
-      this.analytics.track({ name: 'ad_offered', placement });
-      this.showMockAdOverlay(() => {
-        void this.adService.showRewarded(placement).then((watched) => {
-          if (!watched) {
-            doubled = false;
-            return;
-          }
-          this.analytics.track({ name: 'ad_watched', placement });
-          currentSaved = { ...currentSaved, stars: currentSaved.stars + awarded };
-          this.saveService.save(currentSaved);
-          doubleLink.setText(t('restoredLabel', this.lang));
-          doubleLink.disableInteractive();
-          this.tweens.add({ targets: counterProxy, n: awarded * 2, duration: 400, onUpdate: () => counterText.setText(`+${Math.round(counterProxy.n)}`) });
-        });
-      });
-    });
-
     // Birincil: Sonraki Seviye.
     const btnY = panelH / 2 - 56;
     const btnW = panelW - 64;
@@ -1109,7 +1043,7 @@ export class GameScene extends Phaser.Scene {
       overlay.destroy();
       panel.destroy();
       btnZone.destroy();
-      this.maybeShowInterstitialThenGoToRoom();
+      this.scene.start('RoomScene');
     });
 
     this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });
@@ -1258,27 +1192,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private maybeShowInterstitialThenGoToRoom(): void {
-    const data = this.saveService.load();
-    const shouldShow =
-      this.sessionMode === 'progress' &&
-      this.levelNumber !== null &&
-      !data.removeAdsPurchased &&
-      shouldShowInterstitial(this.levelNumber);
-
-    if (!shouldShow) {
-      this.scene.start('RoomScene');
-      return;
-    }
-
-    this.analytics.track({ name: 'ad_offered', placement: 'interstitial' });
-    this.showMockAdOverlay(() => {
-      void this.adService.showInterstitial().then(() => {
-        this.analytics.track({ name: 'ad_watched', placement: 'interstitial' });
-        this.scene.start('RoomScene');
-      });
-    });
-  }
 
   private showStuckBanner(): void {
     this.tweens.add({ targets: this.stuckBanner, alpha: 1, duration: 200 });

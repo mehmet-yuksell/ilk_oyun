@@ -44,8 +44,6 @@ export class SettingsScene extends Phaser.Scene {
       this.saveData = { ...this.saveData, hapticEnabled: value };
       this.persistAndRefresh();
     });
-    y = this.addRemoveAdsRow(y, lang);
-
     this.createButton(this.scale.width / 2, this.scale.height - insets.bottom - 36, t('closeButton', lang), () => {
       this.scene.start('RoomScene');
     });
@@ -90,36 +88,6 @@ export class SettingsScene extends Phaser.Scene {
     this.addPill(offX, y + 10, t('offLabel', lang), !value, () => onChange(false));
 
     return y + 54;
-  }
-
-  private addRemoveAdsRow(y: number, lang: Language): number {
-    const purchased = this.saveData.removeAdsPurchased;
-    const label = purchased ? t('removeAdsPurchased', lang) : t('removeAdsButton', lang);
-
-    const bg = this.add.graphics();
-    const w = ROW_WIDTH;
-    const h = 44;
-    const x = ROW_X;
-    bg.fillStyle(purchased ? hexToNum(COLORS.surfaceMuted) : hexToNum(COLORS.coral), 1);
-    bg.fillRoundedRect(x, y, w, h, 10);
-
-    this.add
-      .text(x + w / 2, y + h / 2, label, { fontFamily: FONT, fontSize: '15px', color: COLORS.cream })
-      .setOrigin(0.5);
-
-    if (!purchased) {
-      const zone = this.add.zone(x + w / 2, y + h / 2, w, Math.max(48, h)).setInteractive({ useHandCursor: true });
-      zone.on('pointerup', () => this.onPurchaseRemoveAds());
-    }
-
-    return y + h + 20;
-  }
-
-  private async onPurchaseRemoveAds(): Promise<void> {
-    // Gerçek bir ödeme SDK'sı yok: burada yalnızca arayüz yer tutucusu var.
-    this.saveData = { ...this.saveData, removeAdsPurchased: true };
-    this.saveService.save(this.saveData);
-    this.scene.restart();
   }
 
   private addPill(x: number, y: number, label: string, active: boolean, onTap: () => void): void {

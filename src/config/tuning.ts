@@ -119,8 +119,9 @@ export const DIFFICULTY = {
     maxSimultaneousAfterLevel: 50,
   },
 
-  /** "+ Ekstra Kap" ilk N seviyede ücretsiz (reklamsız) verilir. */
-  extraContainerFreeUntilLevel: 10,
+  /** "+ Ekstra Kap" seviye başına verilen ücretsiz hak sayısı (reklam/satın alma katmanı yok --
+   * bkz. GameScene.onAddExtraContainer). Kalan hak sayısı butonun üzerinde gösterilir. */
+  extraContainerFreeUsesPerLevel: 1,
 
   /** Karıştırma derinliği: shuffleDepthMinFactor -> shuffleDepthMaxFactor arası, shuffleDepthRampLevels seviyede tırmanır. */
   shuffleDepthMinFactor: 1.5,

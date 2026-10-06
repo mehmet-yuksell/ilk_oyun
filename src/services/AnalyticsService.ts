@@ -17,8 +17,6 @@ export type AnalyticsEvent =
       readonly moveLimit: number;
     }
   | { readonly name: 'booster_used'; readonly booster: 'extra-container' | 'undo' }
-  | { readonly name: 'ad_offered'; readonly placement: string }
-  | { readonly name: 'ad_watched'; readonly placement: string }
   | { readonly name: 'room_item_restored'; readonly roomId: string; readonly itemId: string; readonly styleIndex: 0 | 1 };
 
 export interface AnalyticsService {
@@ -32,7 +30,9 @@ export interface AnalyticsService {
  */
 export class ConsoleAnalyticsService implements AnalyticsService {
   track(event: AnalyticsEvent): void {
-    // eslint-disable-next-line no-console
-    console.log(`[analytics] ${event.name}`, event);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.log(`[analytics] ${event.name}`, event);
+    }
   }
 }

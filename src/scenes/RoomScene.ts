@@ -5,7 +5,6 @@ import { canClaimDailyReward, claimDailyReward, todayKey } from '../core/dailyRe
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
 import { type HapticService, WebVibrationHapticService } from '../services/HapticService';
 import { type SoundService, WebAudioSoundService } from '../services/SoundService';
-import { type AdService, MockAdService, type RewardedPlacement } from '../services/AdService';
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { getDebugLevelParam } from './debugLevelParam';
 import { colorForItemIndex } from './roomVisuals';
@@ -56,7 +55,6 @@ export class RoomScene extends Phaser.Scene {
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
   private readonly hapticService: HapticService = new WebVibrationHapticService();
   private readonly soundService: SoundService = new WebAudioSoundService();
-  private readonly adService: AdService = new MockAdService();
   private readonly analytics: AnalyticsService = new ConsoleAnalyticsService();
 
   private saveData!: SaveData;
@@ -575,76 +573,6 @@ export class RoomScene extends Phaser.Scene {
     this.feedback('success');
     this.showFloatingReward(`+${result.starsAwarded}`);
     this.refresh();
-    this.offerDoubleDailyReward(result.starsAwarded);
-  }
-
-  /** Günlük ödülü ödüllü reklamla ikiye katlama teklifi; birkaç saniye içinde dokunulmazsa kendiliğinden kapanır. */
-  private offerDoubleDailyReward(awarded: number): void {
-    const placement: RewardedPlacement = 'double-daily-reward';
-    const btnY = this.safeTop + 150;
-    const btn = this.add
-      .text(this.scale.width / 2, btnY, t('watchAdDoubleDailyReward', this.lang), {
-        fontFamily: 'Fredoka, sans-serif',
-        fontSize: '14px',
-        color: '#ffffff',
-        backgroundColor: COLORS.turquoise,
-        padding: { x: 10, y: 6 },
-      })
-      .setOrigin(0.5)
-      .setDepth(50);
-    const btnZone = this.add
-      .zone(this.scale.width / 2, btnY, Math.max(48, btn.width), 48)
-      .setDepth(50)
-      .setInteractive({ useHandCursor: true });
-
-    let resolved = false;
-    const dismiss = () => {
-      if (resolved) return;
-      resolved = true;
-      btn.destroy();
-      btnZone.destroy();
-    };
-
-    btnZone.on('pointerup', () => {
-      if (resolved) return;
-      resolved = true;
-      btn.destroy();
-      btnZone.destroy();
-      this.analytics.track({ name: 'ad_offered', placement });
-      this.showMockAdOverlay(() => {
-        void this.adService.showRewarded(placement).then((watched) => {
-          if (!watched) return;
-          this.analytics.track({ name: 'ad_watched', placement });
-          this.saveData = { ...this.saveData, stars: this.saveData.stars + awarded };
-          this.saveService.save(this.saveData);
-          this.showFloatingReward(`+${awarded}`);
-          this.refresh();
-        });
-      });
-    });
-
-    this.time.delayedCall(2500, dismiss);
-  }
-
-  private showMockAdOverlay(onDone: () => void): void {
-    const overlay = this.add
-      .rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.75)
-      .setOrigin(0, 0)
-      .setDepth(300);
-    const text = this.add
-      .text(this.scale.width / 2, this.scale.height / 2, t('mockAdOverlay', this.lang), {
-        fontFamily: 'Fredoka, sans-serif',
-        fontSize: '18px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5)
-      .setDepth(301);
-
-    this.time.delayedCall(450, () => {
-      overlay.destroy();
-      text.destroy();
-      onDone();
-    });
   }
 
   private showFloatingReward(label: string): void {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultSaveData, InMemoryKeyValueStorage, LocalStorageSaveService } from './SaveService';
+import { createDefaultSaveData, InMemoryKeyValueStorage, LocalStorageSaveService, migrateSaveData, SAVE_DATA_VERSION } from './SaveService';
 import { ROOMS } from '../core/roomDefs';
 
 describe('createDefaultSaveData', () => {
@@ -13,7 +13,7 @@ describe('createDefaultSaveData', () => {
     expect(data.language).toBe('tr');
     expect(data.soundEnabled).toBe(true);
     expect(data.hapticEnabled).toBe(true);
-    expect(data.removeAdsPurchased).toBe(false);
+    expect(data.version).toBe(SAVE_DATA_VERSION);
   });
 
   it('her oda için başlangıç ilerlemesi tüm öğeler yenilenmemiş olarak gelir', () => {
@@ -58,5 +58,30 @@ describe('LocalStorageSaveService', () => {
     new LocalStorageSaveService(storage).save({ ...createDefaultSaveData(), stars: 7 });
     const reloaded = new LocalStorageSaveService(storage).load();
     expect(reloaded.stars).toBe(7);
+  });
+
+  it('eski sürümden kalan kaldırılmış alanlar (ör. removeAdsPurchased) sessizce atılır', () => {
+    const storage = new InMemoryKeyValueStorage();
+    storage.setItem('yerli-yerinde-save-v1', JSON.stringify({ version: 1, stars: 30, removeAdsPurchased: true }));
+    const service = new LocalStorageSaveService(storage);
+    const loaded = service.load();
+    expect(loaded.stars).toBe(30);
+    expect(loaded.version).toBe(SAVE_DATA_VERSION);
+    expect((loaded as unknown as Record<string, unknown>).removeAdsPurchased).toBeUndefined();
+  });
+});
+
+describe('migrateSaveData', () => {
+  it('geçersiz/eksik girdide varsayılana düşer', () => {
+    expect(migrateSaveData(null)).toEqual(createDefaultSaveData());
+    expect(migrateSaveData(undefined)).toEqual(createDefaultSaveData());
+    expect(migrateSaveData('bozuk')).toEqual(createDefaultSaveData());
+  });
+
+  it('bilinen alanları korur, bilinmeyen/kaldırılmış alanları yok sayar, sürümü günceller', () => {
+    const migrated = migrateSaveData({ version: 1, stars: 42, removeAdsPurchased: true, someFutureRemovedField: 'x' });
+    expect(migrated.stars).toBe(42);
+    expect(migrated.version).toBe(SAVE_DATA_VERSION);
+    expect((migrated as unknown as Record<string, unknown>).someFutureRemovedField).toBeUndefined();
   });
 });
