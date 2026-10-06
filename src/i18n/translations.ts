@@ -21,10 +21,10 @@ export const translations = {
   comboText3: { tr: 'Müthiş!', en: 'Awesome!' },
   comboText4Plus: { tr: 'Muhteşem!', en: 'Amazing!' },
   nextLevelButton: { tr: 'Sonraki Seviye', en: 'Next Level' },
-  levelLostTitle: { tr: 'KAYBETTİNİZ', en: 'YOU LOST' },
+  levelLostTitle: { tr: 'Hamle Hakkın Bitti', en: 'Out of Moves' },
   levelLostBody: {
-    tr: '{limit} hamle hakkınız bitti. Tekrar deneyebilirsiniz!',
-    en: 'You used all {limit} moves. Give it another try!',
+    tr: '{limit} hamle içinde tamamlanamadı ama sorun değil — tekrar deneyebilirsin.',
+    en: "Couldn't finish within {limit} moves — no worries, give it another try.",
   },
   retryButton: { tr: 'Tekrar Dene', en: 'Try Again' },
   backToRoomButton: { tr: 'Odaya Dön', en: 'Back to Room' },

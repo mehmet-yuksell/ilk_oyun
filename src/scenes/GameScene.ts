@@ -1063,89 +1063,71 @@ export class GameScene extends Phaser.Scene {
     this.showLevelLostPanel();
   }
 
-  /** Hamle hakkı bitince: süslü (çentikli, altın kenarlıklı) bir kurdele üzerinde "KAYBETTİNİZ",
-   * ardından "Tekrar Dene" (aynı seviyeyi yeniden başlatır) / "Odaya Dön". */
+  /** Hamle hakkı bitince: sakin tonlu bir panel ("Hamle Hakkın Bitti"), ardından dolgu birincil
+   * "Tekrar Dene" (aynı seviyeyi yeniden başlatır) + çerçeveli ikincil "Odaya Dön" butonu. */
   private showLevelLostPanel(): void {
     const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x1a1020, 0).setOrigin(0, 0).setDepth(300);
     this.tweens.add({ targets: overlay, fillAlpha: 0.6, duration: 220 });
 
     const panelW = Math.min(this.scale.width - 56, 340);
-    const panelH = 340;
+    const panelH = 380;
     const panel = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
 
     const bg = this.add.graphics();
     bg.fillStyle(hexToNum(COLORS.surface), 1);
     bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
-    bg.lineStyle(3, hexToNum(COLORS.danger), 0.6);
+    bg.lineStyle(3, hexToNum(COLORS.amber), 0.5);
     bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
     panel.add(bg);
 
-    // Süslü şerit: paneli çaprazlamasına kesen, çentikli (kurdele) uçlu bir bant.
-    const ribbon = this.add.container(0, -panelH / 2 + 56).setAngle(-8);
-    const ribbonW = panelW + 70;
-    const ribbonH = 54;
-    const rg = this.add.graphics();
-    rg.fillGradientStyle(
-      hexToNum(COLORS.danger),
-      hexToNum(COLORS.danger),
-      shade(COLORS.danger, -0.28),
-      shade(COLORS.danger, -0.28),
-      1,
-      1,
-      1,
-      1,
-    );
-    rg.fillRect(-ribbonW / 2, -ribbonH / 2, ribbonW, ribbonH);
-    rg.fillStyle(0xffffff, 0.16);
-    rg.fillRect(-ribbonW / 2, -ribbonH / 2, ribbonW, ribbonH * 0.4);
-    // çentikli (notch) uçlar -- klasik kurdele kesimi
-    rg.fillStyle(hexToNum(COLORS.surface), 1);
-    for (const side of [-1, 1] as const) {
-      const tipX = side * (ribbonW / 2);
-      rg.fillTriangle(tipX, -ribbonH / 2, tipX, ribbonH / 2, tipX - side * 16, 0);
-    }
-    rg.lineStyle(2, hexToNum(COLORS.gold), 0.9);
-    rg.strokeRect(-ribbonW / 2, -ribbonH / 2, ribbonW, ribbonH);
-    ribbon.add(rg);
-    ribbon.add(
+    // Sakin tonlu başlık rozeti: panel genişliğinden DAR tutulur ve döndürülmez -- panelin
+    // içine temiz oturur, köşelerden taşmaz (eski "kurdele" tasarımındaki taşma hatasının düzeltmesi).
+    const bannerW = panelW - 48;
+    const bannerH = 46;
+    const bannerY = -panelH / 2 + 46;
+    const bannerG = this.add.graphics({ x: 0, y: bannerY });
+    bannerG.fillGradientStyle(hexToNum(COLORS.amber), hexToNum(COLORS.amber), shade(COLORS.amber, -0.12), shade(COLORS.amber, -0.12), 1, 1, 1, 1);
+    bannerG.fillRoundedRect(-bannerW / 2, -bannerH / 2, bannerW, bannerH, bannerH / 2);
+    bannerG.fillStyle(0xffffff, 0.2);
+    bannerG.fillRoundedRect(-bannerW / 2 + 6, -bannerH / 2 + 4, bannerW - 12, bannerH * 0.4, bannerH * 0.3);
+    panel.add(bannerG);
+    panel.add(
       this.add
-        .text(0, 1, t('levelLostTitle', this.lang), {
+        .text(0, bannerY + 1, t('levelLostTitle', this.lang), {
           fontFamily: 'Fredoka, sans-serif',
-          fontSize: '23px',
-          fontStyle: '700',
-          color: COLORS.cream,
-          stroke: '#000000',
-          strokeThickness: 3,
+          fontSize: '19px',
+          fontStyle: '600',
+          color: COLORS.ink,
         })
         .setOrigin(0.5),
     );
-    panel.add(ribbon);
 
     panel.add(
       this.add
-        .text(0, -10, t('levelLostBody', this.lang, { limit: this.moveLimit }), {
+        .text(0, bannerY + 70, t('levelLostBody', this.lang, { limit: this.moveLimit }), {
           fontFamily: 'Fredoka, sans-serif',
           fontSize: '14px',
           color: COLORS.inkSoft,
           align: 'center',
-          wordWrap: { width: panelW - 60 },
+          lineSpacing: 4,
+          wordWrap: { width: panelW - 64 },
         })
         .setOrigin(0.5),
     );
 
     // Birincil: Tekrar Dene (aynı seviyeyi yeniden başlatır).
-    const btnY = panelH / 2 - 56;
     const btnW = panelW - 64;
-    const btnH = 56;
+    const primaryBtnH = 56;
+    const primaryY = panelH / 2 - 108;
     const btnBg = this.add.graphics();
     btnBg.fillStyle(hexToNum(COLORS.coral), 1);
-    btnBg.fillRoundedRect(-btnW / 2, btnY - btnH / 2, btnW, btnH, btnH / 2);
+    btnBg.fillRoundedRect(-btnW / 2, primaryY - primaryBtnH / 2, btnW, primaryBtnH, primaryBtnH / 2);
     btnBg.fillStyle(0xffffff, 0.18);
-    btnBg.fillRoundedRect(-btnW / 2 + 8, btnY - btnH / 2 + 5, btnW - 16, btnH * 0.4, btnH * 0.3);
+    btnBg.fillRoundedRect(-btnW / 2 + 8, primaryY - primaryBtnH / 2 + 5, btnW - 16, primaryBtnH * 0.4, primaryBtnH * 0.3);
     panel.add(btnBg);
     panel.add(
       this.add
-        .text(0, btnY, t('retryButton', this.lang), {
+        .text(0, primaryY, t('retryButton', this.lang), {
           fontFamily: 'Fredoka, sans-serif',
           fontSize: '19px',
           fontStyle: '600',
@@ -1153,7 +1135,7 @@ export class GameScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
-    const retryZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
+    const retryZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + primaryY, btnW, primaryBtnH).setInteractive({ useHandCursor: true });
     retryZone.on('pointerup', () => {
       overlay.destroy();
       panel.destroy();
@@ -1161,21 +1143,28 @@ export class GameScene extends Phaser.Scene {
       this.restartSameLevel();
     });
 
-    // İkincil: Odaya Dön.
-    const backY = btnY - 46;
-    const backText = this.add
-      .text(0, backY, t('backToRoomButton', this.lang), {
-        fontFamily: 'Fredoka, sans-serif',
-        fontSize: '14px',
-        color: COLORS.inkSoft,
-        fontStyle: '600',
-      })
-      .setOrigin(0.5)
-      .setInteractive(new Phaser.Geom.Rectangle(-80, -24, 160, 48), Phaser.Geom.Rectangle.Contains);
-    panel.add(backText);
-    backText.on('pointerup', () => {
+    // İkincil: Odaya Dön -- gerçek bir çerçeveli (outline) buton, düz yazı değil.
+    const secondaryBtnH = 46;
+    const secondaryY = panelH / 2 - 40;
+    const secondaryBg = this.add.graphics();
+    secondaryBg.lineStyle(2, hexToNum(COLORS.inkSoft), 0.45);
+    secondaryBg.strokeRoundedRect(-btnW / 2, secondaryY - secondaryBtnH / 2, btnW, secondaryBtnH, secondaryBtnH / 2);
+    panel.add(secondaryBg);
+    panel.add(
+      this.add
+        .text(0, secondaryY, t('backToRoomButton', this.lang), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '15px',
+          color: COLORS.inkSoft,
+          fontStyle: '600',
+        })
+        .setOrigin(0.5),
+    );
+    const backZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + secondaryY, btnW, Math.max(MIN_TOUCH_TARGET, secondaryBtnH)).setInteractive({ useHandCursor: true });
+    backZone.on('pointerup', () => {
       overlay.destroy();
       panel.destroy();
+      backZone.destroy();
       this.scene.start('RoomScene');
     });
 

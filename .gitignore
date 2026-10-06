@@ -41,8 +41,9 @@ android/app/src/main/assets/capacitor.config.json
 
 .vercel
 
-# Görev boyunca kullanılan tek seferlik Playwright ekran görüntüsü betikleri (üretim kodu değil)
+# Görev boyunca kullanılan tek seferlik Playwright/inceleme betikleri (üretim kodu değil)
 scripts/_*.cjs
+scripts/_*.ts
 
 # İnceleme için alınan ekran görüntüleri (repoya değil, yalnızca yerel incelemeye yönelik)
 _review-screenshots/

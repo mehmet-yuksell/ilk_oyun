@@ -62,3 +62,32 @@ Kronolojik sırayla, en eski en üstte.
   kendi iç kütüphane kodundan geliyor (ör. WebGL context-lost uyarısı,
   matter-js debug logger) -- bunlar bizim kodumuz değil ve çoğu zaten
   devre dışı (`banner:false` ile Phaser'ın kendi banner logu da kapatıldı).
+
+## Faz 3 — Sonuç ekranları (kazanma/kaybetme) yeniden tasarımı
+
+- **Taşma hatasının kök nedeni:** eski "kurdele" `panelW + 70` genişliğinde
+  VE -8° döndürülmüştü; Phaser container'ları çocuklarını otomatik maskelemez,
+  bu yüzden geniş+döndürülmüş kurdele panelin yuvarlak köşeli kartının
+  dışına taşıyordu. Düzeltme: rozet artık panelden DAR (`panelW - 48`),
+  döndürülmemiş, sade yuvarlak-köşeli bir bant -- hem taşma yapısal olarak
+  imkansız hem de "daha sakin/profesyonel" isteğine uyuyor (klasik oyun
+  kurdelesi yerine düz bir rozet/pill).
+- **Ton:** "KAYBETTİNİZ" (kırmızı, siyah kontürlü, bağırgan) -> "Hamle Hakkın
+  Bitti" (amber rozet, koyu mürekkep metin, kontürsüz). Panel kenarlığı da
+  `COLORS.danger` yerine `COLORS.amber` -- "kaybetme" yerine "mola/tekrar
+  dene" hissi veriyor.
+- **"Odaya Dön":** düz metinden gerçek bir ikincil (çerçeveli, dolgusuz) pill
+  butona çevrildi; "Tekrar Dene" (birincil, dolgulu) butonun ALTINA
+  yerleşti, aynı genişlik, 46px yükseklik (dokunma hedefi zone'u yine de
+  >=48dp). Panel yüksekliği 340->380'e çıktı, iki buton için yer açmak üzere.
+- Kazanma paneli zaten aynı kart kromunu kullanıyordu (yuvarlak köşe, renkli
+  kenarlık, aynı birincil buton stili); ek bir değişiklik gerekmedi, sadece
+  yıldız/sayaç animasyonu kısaltıldı (stagger 180->110ms, pop süresi
+  260->220ms, sayaç 700->520ms, panel giriş 260->220ms) -- "zarif ve kısa"
+  isteği için (`JUICE.levelCompletePanel`, tuning.ts).
+- **Doğrulama yöntemi:** Playwright ile gerçek bir kayıp/kazanç tetiklendi --
+  kayıp için hamle+geri-al döngüsü, kazanç için `levelConfigFor(1)` +
+  `generateVerifiedLevel` ile üretilen GERÇEK sertifika (çözüm hamle listesi)
+  tekrar oynatıldı (bkz. scripts/_get-certificate.ts, scripts/_win-shoot.cjs
+  -- ikisi de gitignored, tek seferlik). Her iki panel 360x800 ve 412x915'te
+  ekran görüntüsüyle kontrol edildi, taşma/kesilme yok.

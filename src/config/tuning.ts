@@ -238,12 +238,13 @@ export const JUICE = {
     holdDuration: 260,
     cycleGapMs: 500,
   },
-  /** Seviye bitiş panelinde yıldızların sırayla zıplayarak belirmesi + sayaç sayma hızı. */
+  /** Seviye bitiş panelinde yıldızların sırayla belirmesi + sayaç sayma hızı -- "zarif ve kısa"
+   * olması için stagger/süre kısa tutulur (bkz. Faz 3 kararları). */
   levelCompletePanel: {
-    starPopStaggerMs: 180,
-    starPopDuration: 260,
-    counterDurationMs: 700,
-    panelInDuration: 260,
+    starPopStaggerMs: 110,
+    starPopDuration: 220,
+    counterDurationMs: 520,
+    panelInDuration: 220,
   },
   /** Kap tamamlanınca hafif ekran titremesi + combo metni eşiği (completion ile paylaşılır). */
   screenShake: {
