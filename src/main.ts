@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { App as CapacitorApp } from '@capacitor/app';
+import { SplashScene } from './scenes/SplashScene';
 import { RoomScene } from './scenes/RoomScene';
 import { GameScene } from './scenes/GameScene';
 import { SettingsScene } from './scenes/SettingsScene';
@@ -35,7 +36,7 @@ async function boot(): Promise<void> {
       target: 60,
       min: 20,
     },
-    scene: [RoomScene, GameScene, SettingsScene],
+    scene: [SplashScene, RoomScene, GameScene, SettingsScene],
   };
 
   new ConsoleAnalyticsService().track({ name: 'session_start' });

@@ -315,7 +315,11 @@ const DRAWERS: Record<RoomIconKey, Drawer> = {
   toybox: drawToybox,
 };
 
-/** vivid=false: soluk/gri "eski" hâli. vivid=true: accentColor ile canlı degrade "yeni" hâli. */
+/**
+ * vivid=false: KOYU, net bir siluet (yenilenmemiş -- bkz. Faz 5 kararları: eski soluk/açık gri
+ * dolgu "eşya daha yenilenmemiş mi, yoksa zaten mi öyle" belirsizliği yaratıyordu, koyu siluet
+ * çok daha net bir "henüz kilitli/yenilenmemiş" sinyali verir). vivid=true: accentColor ile
+ * canlı degrade+parlama "yenilendi" hâli. */
 export function drawRoomIcon(
   scene: Phaser.Scene,
   key: RoomIconKey,
@@ -325,7 +329,7 @@ export function drawRoomIcon(
   vivid: boolean,
 ): Phaser.GameObjects.Graphics {
   const g = scene.add.graphics();
-  const body = vivid ? accentColor : hexToNum(COLORS.surfaceMuted);
+  const body = vivid ? accentColor : hexToNum(COLORS.ink);
   DRAWERS[key](g, w, h, body, vivid);
   return g;
 }

@@ -84,4 +84,19 @@ describe('migrateSaveData', () => {
     expect(migrated.version).toBe(SAVE_DATA_VERSION);
     expect((migrated as unknown as Record<string, unknown>).someFutureRemovedField).toBeUndefined();
   });
+
+  it('ROOMS listesi büyüdükten sonra, eski kayıttaki kısa rooms dizisi güncel uzunluğa tamamlanır', () => {
+    // ROOMS 5'ten 10'a çıkarılmadan ÖNCE kaydedilmiş bir oyuncuyu simüle eder -- bkz. Faz 5
+    // kararları: bu durum gerçek bir çökmeye yol açıyordu (RoomScene eksik indekse erişiyordu).
+    const oldProgress = { roomId: ROOMS[0].id, items: { [`${ROOMS[0].id}-0`]: { restored: true, styleIndex: 0 as const } } };
+    const migrated = migrateSaveData({ version: 1, stars: 10, rooms: [oldProgress] });
+    expect(migrated.rooms).toHaveLength(ROOMS.length);
+    expect(migrated.rooms[0]).toEqual(oldProgress); // mevcut ilerleme korunur
+    expect(Object.values(migrated.rooms[1].items).every((s) => !s.restored)).toBe(true); // yeni odalar taze baslar
+  });
+
+  it('rooms hiç array değilse (bozuk veri) tamamen taze bir rooms listesi üretir', () => {
+    const migrated = migrateSaveData({ version: 1, rooms: 'not-an-array' });
+    expect(migrated.rooms).toEqual(createDefaultSaveData().rooms);
+  });
 });

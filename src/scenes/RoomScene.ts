@@ -11,7 +11,8 @@ import { colorForItemIndex } from './roomVisuals';
 import { drawRoomIcon, iconKeyForLabel, ICON_DEPTH, type RoomIconKey } from './roomItemArt';
 import { readSafeAreaInsets } from './safeArea';
 import { syncBodyBackground } from './bodyBackground';
-import { COLORS, TYPE_SCALE, hexToNum, shade } from './theme';
+import { fadeToScene } from './sceneTransition';
+import { COLORS, RADIUS, TYPE_SCALE, hexToNum, shade } from './theme';
 import { themeForLevel } from '../config/tuning';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { t } from '../i18n/translations';
@@ -92,6 +93,7 @@ export class RoomScene extends Phaser.Scene {
     this.room = ROOMS[this.saveData.currentRoomIndex];
     this.placedItems = this.layoutItems(this.room);
     this.confetti = new ConfettiEmitter(this, 210);
+    this.cameras.main.fadeIn(220);
 
     const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
     this.safeTop = insets.top;
@@ -138,7 +140,7 @@ export class RoomScene extends Phaser.Scene {
       () => this.onClaimDailyReward(),
     );
     this.createSmallButton(this.scale.width / 2 + 95, this.safeTop + 96, 170, 36, t('dailyPuzzleButton', this.lang), () => {
-      this.scene.start('GameScene', { mode: 'daily' });
+      fadeToScene(this, 'GameScene', { mode: 'daily' });
     });
 
     this.drawProgressBar(this.safeTop + 128);
@@ -148,7 +150,7 @@ export class RoomScene extends Phaser.Scene {
 
     const playY = this.scale.height - this.safeBottom - 44;
     this.createPlayButton(this.scale.width / 2, playY, t('playButton', this.lang), () => {
-      this.scene.start('GameScene', { mode: 'progress', levelNumber: this.saveData.currentLevel });
+      fadeToScene(this, 'GameScene', { mode: 'progress', levelNumber: this.saveData.currentLevel });
     });
 
     this.refresh();
@@ -342,6 +344,7 @@ export class RoomScene extends Phaser.Scene {
 
       const icon = drawRoomIcon(this, placed.icon, size, size, accent, restored);
       card.add(icon);
+      card.setData('itemId', placed.id);
 
       if (!restored) {
         const badge = this.add.container(size * 0.42, -size * 0.46);
@@ -493,22 +496,37 @@ export class RoomScene extends Phaser.Scene {
     this.saveService.save(this.saveData);
     this.feedback('success');
     this.analytics.track({ name: 'room_item_restored', roomId: this.room.id, itemId: placed.id, styleIndex });
-    this.playRestoreFx(placed);
     this.refresh();
+    this.playRestoreFx(placed);
 
     if (isRoomComplete(outcome.progress)) {
       this.time.delayedCall(400, () => this.onRoomComplete());
     }
   }
 
-  /** Yenileme anında kısa bir parıltı + parçacık patlaması (squash&stretch yeni ikonun ilk render'ında). */
+  /** Yenileme anında koyu siluetten canlı hâle "renk ve ışıkla uyanan" bir geçiş: taze çizilmiş
+   * (artık canlı) ikon küçükten büyüyerek belirir + üzerinde kısa bir beyaz ışık parıltısı söner +
+   * rengiyle eşleşen bir parçacık patlaması. refresh() (bkz. çağıran confirmRestore) ikonu bu
+   * fonksiyon çağrılmadan HEMEN ÖNCE zaten canlı hâliyle yeniden çizdiği için burada sadece o taze
+   * ikona "geliş" animasyonu bindiriyoruz, yeniden çizmiyoruz. */
   private playRestoreFx(placed: PlacedItem): void {
     const { x, y } = placed.slot;
+    const accent = colorForItemIndex(placed.colorIndex);
+
+    const card = (this.itemsLayer.list as Phaser.GameObjects.Container[]).find((c) => c.getData('itemId') === placed.id);
+    if (card) {
+      card.setScale(0.55);
+      this.tweens.add({ targets: card, scale: 1, duration: 420, ease: 'Back.easeOut' });
+    }
+
+    const flash = this.add.circle(x, y, SLOT_BASE * placed.slot.scale * 0.5, 0xffffff, 0.75).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: flash, scale: 1.6, alpha: 0, duration: 380, ease: 'Cubic.easeOut', onComplete: () => flash.destroy() });
+
     const burst = this.add.circle(x, y, 8, hexToNum(COLORS.gold), 0.85);
     this.tweens.add({ targets: burst, radius: 60, alpha: 0, duration: 420, onComplete: () => burst.destroy() });
     for (let i = 0; i < 8; i++) {
       const angle = (Math.PI * 2 * i) / 8;
-      const p = this.add.circle(x, y, 3.5, colorForItemIndex(placed.colorIndex), 1);
+      const p = this.add.circle(x, y, 3.5, accent, 1);
       this.tweens.add({
         targets: p,
         x: x + Math.cos(angle) * 55,
@@ -521,44 +539,95 @@ export class RoomScene extends Phaser.Scene {
     }
   }
 
+  /** Oda tamamlama: ayrı, güçlü ama sade bir kutlama paneli (sonuç panelleriyle aynı kart dili) --
+   * eskisi birkaç saniyede kendiliğinden kapanan zayıf bir "toast" idi (bkz. Faz 5 kararları),
+   * artık oyuncu "Devam Et"e dokunana kadar açık kalan gerçek bir modal. */
   private onRoomComplete(): void {
     const isLastRoom = this.saveData.currentRoomIndex >= ROOMS.length - 1;
-    const message = isLastRoom ? t('allRoomsCompleteNote', this.lang) : t('roomCompleteTitle', this.lang, { room: this.room.name });
+    const title = isLastRoom ? t('allRoomsCompleteNote', this.lang) : t('roomCompleteTitle', this.lang, { room: this.room.name });
 
-    this.cameras.main.zoomTo(1.08, 350, 'Sine.easeOut');
     this.spawnConfetti();
 
-    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0xf2c14e, 0).setOrigin(0, 0).setDepth(200);
-    const text = this.add
-      .text(this.scale.width / 2, this.scale.height / 2, message, {
-        fontFamily: 'Fredoka, sans-serif',
-        fontSize: '26px',
-        fontStyle: '600',
-        color: COLORS.ink,
-        align: 'center',
-        wordWrap: { width: this.scale.width - 80 },
-      })
-      .setOrigin(0.5)
-      .setAlpha(0)
-      .setDepth(201);
+    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x241437, 0).setOrigin(0, 0).setDepth(300);
+    this.tweens.add({ targets: overlay, fillAlpha: 0.55, duration: 220 });
 
-    this.tweens.add({ targets: overlay, alpha: 0.4, duration: 200, yoyo: true });
-    this.tweens.add({
-      targets: text,
-      alpha: 1,
-      duration: 300,
-      onComplete: () => {
-        this.time.delayedCall(1400, () => {
-          this.cameras.main.zoomTo(1, 300);
-          const nextIndex = this.saveData.currentRoomIndex + 1;
-          if (nextIndex < ROOMS.length) {
-            this.saveData = { ...this.saveData, currentRoomIndex: nextIndex };
-            this.saveService.save(this.saveData);
-          }
-          this.time.delayedCall(300, () => this.scene.restart());
-        });
-      },
+    const panelW = Math.min(this.scale.width - 56, 340);
+    const panelH = 360;
+    const panel = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(hexToNum(COLORS.surface), 1);
+    bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
+    bg.lineStyle(3, hexToNum(COLORS.gold), 0.6);
+    bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
+    panel.add(bg);
+
+    const starY = -panelH / 2 + 88;
+    const starG = this.add.graphics({ x: 0, y: starY }).setScale(0);
+    starG.fillStyle(hexToNum(COLORS.gold), 1);
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = (Math.PI / 5) * i - Math.PI / 2;
+      const radius = i % 2 === 0 ? 34 : 15;
+      pts.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
+    }
+    starG.fillPoints(pts, true);
+    panel.add(starG);
+    this.tweens.add({ targets: starG, scale: 1, duration: 320, delay: 160, ease: 'Back.easeOut' });
+
+    panel.add(
+      this.add
+        .text(0, starY + 64, title, {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: `${TYPE_SCALE.panelTitle}px`,
+          fontStyle: '600',
+          color: COLORS.ink,
+          align: 'center',
+          wordWrap: { width: panelW - 48 },
+        })
+        .setOrigin(0.5),
+    );
+    panel.add(
+      this.add
+        .text(0, starY + 104, t('roomCompleteSubtitle', this.lang), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: `${TYPE_SCALE.body}px`,
+          color: COLORS.inkSoft,
+        })
+        .setOrigin(0.5),
+    );
+
+    const btnY = panelH / 2 - 56;
+    const btnW = panelW - 64;
+    const btnH = 56;
+    const btnBg = this.add.graphics();
+    btnBg.fillStyle(hexToNum(COLORS.coral), 1);
+    btnBg.fillRoundedRect(-btnW / 2, btnY - btnH / 2, btnW, btnH, btnH / 2);
+    btnBg.fillStyle(0xffffff, 0.18);
+    btnBg.fillRoundedRect(-btnW / 2 + 8, btnY - btnH / 2 + 5, btnW - 16, btnH * 0.4, btnH * 0.3);
+    panel.add(btnBg);
+    panel.add(
+      this.add
+        .text(0, btnY, t('continueButton', this.lang), {
+          fontFamily: 'Fredoka, sans-serif',
+          fontSize: '19px',
+          fontStyle: '600',
+          color: COLORS.cream,
+        })
+        .setOrigin(0.5),
+    );
+    const btnZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
+    btnZone.on('pointerup', () => {
+      btnZone.destroy();
+      const nextIndex = this.saveData.currentRoomIndex + 1;
+      if (nextIndex < ROOMS.length) {
+        this.saveData = { ...this.saveData, currentRoomIndex: nextIndex };
+        this.saveService.save(this.saveData);
+      }
+      fadeToScene(this, 'RoomScene', undefined, 220);
     });
+
+    this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: 240, ease: 'Back.easeOut' });
   }
 
   private spawnConfetti(): void {

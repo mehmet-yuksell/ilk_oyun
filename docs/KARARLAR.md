@@ -137,3 +137,55 @@ Kronolojik sırayla, en eski en üstte.
 - Doğrulama: tsc temiz, 119/119 test yeşil, build başarılı. Playwright ile oda/oyun/ayarlar
   ekranları + 5 oda teması (seviye 15/25/35/45) + 3 engelli seviye (12 gizemli, 31/33 kilitli)
   + kazanma/kaybetme panelleri ekran görüntüsüyle incelendi.
+
+## Faz 5 — Ana oda ekranı ve meta katmanı
+
+- **Yenilenmemiş eşyalar:** `roomItemArt.ts`de "off" gövde rengi soluk `COLORS.surfaceMuted`
+  (açık gri) yerine `COLORS.ink` (koyu mor-lacivert) oldu -- artık gerçekten "koyu, net bir
+  siluet". İkincil detay çizgileri (raf ayrımı, çekmece kulpları vb.) zaten düşük alfa'da
+  `inkSoft` kullanıyordu, bu da koyu gövde üzerinde zayıf-ama-görünür iç detay bırakıyor --
+  tam olarak bir "silüet"ten beklenen his.
+- **Yenileme animasyonu güçlendirildi:** eskiden sadece bir altın parıltı + renkli parçacık
+  patlaması vardı, ikonun kendisi anlık olarak değişiyordu. Şimdi: `refresh()` önce çağrılıp
+  ikon tazece canlı hâliyle çizildikten SONRA o taze karta küçükten-büyüyen bir "Back.easeOut"
+  pop + üzerinde kısa bir beyaz ışık parıltısı (ADD blend) bindiriliyor -- "renk ve ışıkla
+  canlanma" hissi artık ikonun kendisinde de var, yalnızca yanında değil.
+- **Oda sayacı:** zaten ROOMS.length'e göre dinamikti (daha önceki bir fazda düzeltilmişti),
+  "Oda 1/10" doğru gösteriyor -- ekran görüntüsüyle yeniden doğrulandı.
+- **Üst bar:** mevcut düzen (başlık ortada, oda sayacı altında, yıldız+ayarlar sağ üstte dikey
+  istiflenmiş, günlük ödül/bulmaca ortalanmış bir satır) zaten düzenli/dengeli bulundu -- ek
+  değişiklik gerekmedi.
+- **Açılış splash ekranı:** yeni `SplashScene.ts` -- "Cozy Sort" markası + basit bir işaret
+  (650ms tut + kısa pop/fade-in), sonra RoomScene'e yumuşak geçiş. `?level=N` debug modunda
+  splash tamamen atlanır (doğrudan GameScene) -- debug iş akışını yavaşlatmamak için.
+- **Yumuşak sahne geçişleri:** yeni `sceneTransition.ts` (`fadeToScene`) -- kamerayı kısaca
+  siyaha söndürüp hedef sahneyi başlatıyor; hedef sahneler kendi create()'lerinde
+  `fadeIn()` çağırıyor (RoomScene, GameScene). Uygulandığı yerler: splash->oda, OYNA/günlük
+  bulmaca->oyun, oyun geri butonu->oda, kazanma/kaybetme panelindeki "Odaya Dön"/"Sonraki
+  Seviye"->oda. "Tekrar Dene" (aynı seviyeyi anında yeniden başlatır) bilinçli olarak
+  fade'siz bırakıldı -- art arda denemede gecikme hissi vermesin diye.
+- **Oda tamamlama ekranı YENİDEN YAPILDI:** eskisi 1.4 saniyede kendiliğinden kapanan, oyuncu
+  etkileşimi olmayan zayıf bir "toast" idi. Artık kazanma/kaybetme panelleriyle AYNI kart dilini
+  kullanan gerçek bir modal: büyük altın yıldız (pop animasyonlu) + başlık + alt metin + oyuncu
+  dokunana kadar açık kalan "Devam Et" birincil butonu.
+- **GERÇEK BİR ÇÖKME HATASI BULUNDU VE DÜZELTİLDİ (test sırasında):** Playwright ile oda
+  tamamlama akışını uçtan uca doğrularken (9/10 öğe önceden yenilenmiş bir kayıt enjekte edip
+  10.'yu yenileyip "Devam Et"e basarak), "Cannot read properties of undefined (reading
+  'items')" hatasıyla sahne çöktü. Kök neden: `migrateSaveData()` eski bir kayıttaki `rooms`
+  dizisini OLDUĞU GİBİ kopyalıyordu -- ROOMS 5'ten 10'a çıkarılmadan ÖNCE kaydetmiş biri
+  `rooms.length===5` ile kalır, 5. odayı bitirip 6.'ya geçince `saveData.rooms[5]` undefined
+  olur ve RoomScene çöker. Düzeltme: `migrateSaveData()` artık `rooms`i her zaman güncel
+  `ROOMS.length`e tamamlıyor (mevcut ilerlemeyi index'e göre koruyarak, eksikleri taze
+  başlangıçla doldurarak) -- `SaveService.test.ts`e bu senaryo için 2 yeni test eklendi.
+  Bu, gerçek oyuncuları etkileyebilecek bir prod hatasıydı (bu oturumun başında ROOMS
+  genişletildiğinden beri var olan bir regresyon); ekran görüntülü uçtan uca test olmasaydı
+  fark edilmeyebilirdi.
+- **Diğer bir teşhis:** oda tamamlama panelinde başta bir `cameras.main.zoomTo(1.05,...)`
+  kamera efekti vardı; bu, Playwright ile "Devam Et" butonuna tıklarken tutarsız biçimde
+  hedefi kaçırıyordu (muhtemelen zoom sırasında kamera dönüşümüyle ilgili bir Phaser pointer
+  hit-test tuhaflığı). Kazanma/kaybetme panellerinde böyle bir zoom hiç yoktu ve onlar
+  güvenilir çalışıyordu -- bu yüzden zoom efekti tamamen kaldırıldı (sadelik isteğiyle de
+  uyumlu), buton artık her zaman güvenilir tıklanabiliyor.
+- Doğrulama: tsc temiz, 121/121 test yeşil (2 yeni migrasyon testi), build başarılı. Playwright
+  ile splash ekranı, splash->oda geçişi, OYNA->oyun->geri->oda tam döngüsü (0 konsol hatası),
+  ve enjekte edilmiş kayıtla uçtan uca oda-tamamlama->devam->sonraki oda akışı doğrulandı.

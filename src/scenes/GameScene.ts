@@ -20,6 +20,7 @@ import { JUICE, DIFFICULTY, themeForLevel } from '../config/tuning';
 import { COLORS, RADIUS, SHADOW, TYPE_SCALE, hexToNum, shade } from './theme';
 import { readSafeAreaInsets } from './safeArea';
 import { syncBodyBackground } from './bodyBackground';
+import { fadeToScene } from './sceneTransition';
 import { getDebugLevelParam } from './debugLevelParam';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { type HapticService, WebVibrationHapticService } from '../services/HapticService';
@@ -194,13 +195,14 @@ export class GameScene extends Phaser.Scene {
 
     this.analytics.track({ name: 'level_start', levelNumber: this.levelNumber ?? 0, mode: loaded.mode });
 
+    this.cameras.main.fadeIn(220);
     this.drawBackground();
 
     const headerY = this.safeTop + 26;
 
     if (this.sessionMode === 'progress' || this.sessionMode === 'daily') {
       this.createBackButton(insets.left + 30, headerY, () => {
-        if (!this.isAnimating) this.scene.start('RoomScene');
+        if (!this.isAnimating) fadeToScene(this, 'RoomScene');
       });
     }
 
@@ -1067,7 +1069,7 @@ export class GameScene extends Phaser.Scene {
       overlay.destroy();
       panel.destroy();
       btnZone.destroy();
-      this.scene.start('RoomScene');
+      fadeToScene(this, 'RoomScene');
     });
 
     this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });
@@ -1189,7 +1191,7 @@ export class GameScene extends Phaser.Scene {
       overlay.destroy();
       panel.destroy();
       backZone.destroy();
-      this.scene.start('RoomScene');
+      fadeToScene(this, 'RoomScene');
     });
 
     this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });

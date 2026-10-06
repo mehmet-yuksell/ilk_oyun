@@ -39,11 +39,21 @@ export function createDefaultSaveData(): SaveData {
   };
 }
 
+function isValidRoomProgress(value: unknown): value is RoomProgress {
+  return !!value && typeof value === 'object' && typeof (value as RoomProgress).items === 'object';
+}
+
 /**
  * Eski (ör. v1) bir kayıttan gelen BİLİNMEYEN/kaldırılmış alanları (ör. eski removeAdsPurchased)
  * sessizce atar: yalnızca güncel SaveData şeklinde var olan anahtarlar, değeri tanımlıysa, mevcut
  * varsayılanın üzerine yazılır. Böylece sürüm alanı ne olursa olsun kayıt her zaman güncel şekle
  * geçer -- kilitlenme veya veri kaybı olmadan.
+ *
+ * `rooms` ayrıca BOYUT olarak da onarılır: ROOMS listesi büyütülmeden ÖNCE kaydedilmiş eski bir
+ * kayıtta `rooms.length` güncel `ROOMS.length`'ten kısa olabilir -- RoomScene o zaman eksik
+ * indekse erişip çökerdi (bkz. Faz 5 kararları, bu hata test sırasında gerçekten yakalandı).
+ * Eksik odalar için taze bir başlangıç ilerlemesi eklenir, mevcut ilerleme (index'e göre
+ * eşlenerek) korunur.
  */
 export function migrateSaveData(raw: unknown): SaveData {
   const defaults = createDefaultSaveData();
@@ -56,6 +66,10 @@ export function migrateSaveData(raw: unknown): SaveData {
       merged[key] = partial[key];
     }
   }
+
+  const roomsFromPartial = Array.isArray(partial.rooms) ? (partial.rooms as unknown[]) : [];
+  merged.rooms = ROOMS.map((room, i) => (isValidRoomProgress(roomsFromPartial[i]) ? roomsFromPartial[i] : createInitialRoomProgress(room)));
+
   merged.version = SAVE_DATA_VERSION;
   return merged as unknown as SaveData;
 }
