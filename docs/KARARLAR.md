@@ -249,3 +249,51 @@ bu "Faz 7" başlığı altında, aşağıda sırayla belgeleniyor.
   6 yeni test eklendi (save+Preferences yazısı, hata toleransı, restore senaryoları).
   Doğrulama: Playwright ile gerçek bir "günlük ödül al" + sayfa yenileme döngüsünde yıldızların
   doğru kalıcı olduğu kanıtlandı (0 konsol hatası).
+
+- **Arka plana geçiş / Android geri tuşu:** main.ts'teki `visibilitychange` tabanlı pause/resume
+  (`game.loop.sleep()`/`wake()`) Playwright ile simüle edildi (documenti `hidden=true` + olay
+  gönderimi, 1.5sn "arka planda" bekleme, sonra `hidden=false`) -- oyun durumu bozulmadı, geri
+  dönünce bir hamle normal şekilde işlendi (0 konsol hatası). Android donanım geri tuşu
+  (`CapacitorApp.addListener('backButton', ...)`) gerçek bir native Capacitor/Android ortamı
+  gerektirdiği için bu web-only Playwright ortamında DOĞRUDAN tetiklenemedi -- ama kullandığı
+  aynı `scene.start('RoomScene')` / oda-çıkış yolu, uygulama içi "Geri" butonu ve panel
+  "Odaya Dön" aksiyonlarıyla zaten birebir aynı kod yolu (kod incelemesiyle doğrulandı) ve o
+  yollar yukarıdaki navigasyon testlerinde defalarca çalıştı. **Kalan risk:** gerçek cihazda
+  native geri tuşunun son bir kez elle test edilmesi önerilir (bkz. docs/YAYIN.md).
+
+- **GameScene.ts bölündü** (1709 -> 1011 satır, %41 azalma): 698 satır 6 odaklı modüle taşındı:
+  - `gameTypes.ts` (24 satır): paylaşılan `Layout`/`Button`/`ActiveObstacles`/`SessionMode`/
+    `FeedbackKind` tipleri.
+  - `gameInput.ts` (127 satır, GİRDİ): `GameInputController` -- dokun/sürükle algılama,
+    DRAG_THRESHOLD mantığı, tap-seç-taşı akışı. Dar bir `InputHost` arayüzüyle besleniyor.
+  - `gameAnimations.ts` (282 satır, ANİMASYONLAR): `GameJuiceFx` -- flashUnlock/flashInvalid/
+    flashCompletion/flyStarsToCounter/showCombo/animateMove/playLandBounce/moveRunVisual/
+    boşta göz kırpma zamanlayıcısı.
+  - `gameTutorial.ts` (143 satır, ÖĞRETİCİ): `TutorialController` -- el animasyonu + ilk
+    oynanabilir hamleyi bulma.
+  - `gameHud.ts` (113 satır, HUD): createButton/createBackButton/drawStarGlyph/starPoints.
+  - `gamePanels.ts` (242 satır, PANELLER): showLevelCompletePanel/showLevelLostPanel (tam
+    bağımsız fonksiyonlar, parametre + callback alırlar).
+
+  GameScene.ts'te KALANLAR (çekirdek, state-ağırlıklı, taşınması riskli bulundu): create()/
+  loadLevel() (seviye yükleme), computeLayouts()/drawFrames()/render() (durumdan görsele
+  eşleme -- oyunun kalbi), attemptMove()/onUndo()/onAddExtraContainer() (hamle orkestrasyonu),
+  checkStuckOrWin()/onLevelWon()/onLevelLost() (kazanma/kaybetme akışı), lock/typelock rozet
+  çizimi (drawFrames'e çok sıkı bağlı).
+
+  **Teknik not:** tsconfig'te `erasableSyntaxOnly` açık olduğu için constructor parametre-
+  property kısayolu (`constructor(private readonly x: T)`) derlemedi (TS1294) -- 3 sınıfta
+  (GameJuiceFx/GameInputController/TutorialController) açık alan tanımı + atamaya çevrildi.
+
+  Her modül GameScene'den "host" arayüzleriyle (getter/callback fonksiyonları) beslenir --
+  GameScene içindeki mutable durum (gameState, layouts, selectedId, vb.) tek kaynak olarak
+  kalır, modüller buna doğrudan değil callback üzerinden erişir. Kod, mekanik olarak taşındı
+  (mantık satır satır aynı) -- davranış değişikliği YOK.
+
+  Doğrulama: tsc temiz, 133/133 test yeşil, build başarılı. Playwright ile TAM regresyon:
+  splash->oda->oyun->geri döngüsü, arka plan/ön plan geçişi, kalıcılık, gerçek bir kayıp
+  (hamle+geri-al döngüsü -- girdi denetleyicisini ve paneli test eder), gerçek bir kazanç
+  (üretilen seviyenin gerçek çözüm sertifikası tekrar oynatılarak -- animateMove/attemptMove
+  zincirini ve paneli test eder), öğreticinin ilk oynanışta görünüp ikincide görünmediği, ve
+  kilitli kap rozetinin hâlâ doğru çizildiği ekran görüntüleriyle kanıtlandı. Hepsi bölünmeden
+  ÖNCEKİyle piksel-piksel aynı sonuçları verdi.

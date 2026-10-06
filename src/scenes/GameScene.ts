@@ -29,6 +29,12 @@ import { LocalStorageSaveService, type SaveData, type SaveService } from '../ser
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { t } from '../i18n/translations';
 import type { Language, TranslationKey } from '../i18n/translations';
+import type { ActiveObstacles, Button, FeedbackKind, Layout, SessionMode } from './gameTypes';
+import { BUTTON_HEIGHT, BUTTON_WIDTH, createBackButton, createButton, drawStarGlyph } from './gameHud';
+import { GameJuiceFx } from './gameAnimations';
+import { GameInputController } from './gameInput';
+import { TutorialController } from './gameTutorial';
+import { showLevelCompletePanel, showLevelLostPanel } from './gamePanels';
 
 const PROGRESS_LEVEL_STARS = 10;
 const DAILY_PUZZLE_STARS = 15;
@@ -40,15 +46,6 @@ const MOVE_TUTORIAL_HINT_KEY = 'moveTutorial';
 export interface GameSceneData {
   readonly mode?: 'progress' | 'daily';
   readonly levelNumber?: number;
-}
-
-type SessionMode = 'progress' | 'daily' | 'debug' | 'demo';
-type FeedbackKind = 'tap' | 'land' | 'complete' | 'invalid' | 'medium';
-
-interface ActiveObstacles {
-  readonly mystery: boolean;
-  readonly lock: boolean;
-  readonly typeLock: boolean;
 }
 
 interface LoadedLevel {
@@ -78,24 +75,8 @@ const BASE_ITEM_INSET_X = 12;
 const BASE_ITEM_INSET_Y = 5;
 const MIN_GRID_SCALE = 0.52;
 const MAX_GRID_SCALE = 1.32;
-const DRAG_THRESHOLD = 8;
-const BUTTON_WIDTH = 160;
-const BUTTON_HEIGHT = 52;
-const MIN_TOUCH_TARGET = 48;
-
-interface Layout {
-  readonly rect: Phaser.Geom.Rectangle;
-  readonly centerX: number;
-  readonly topY: number;
-}
-
-interface Button {
-  readonly setEnabled: (enabled: boolean) => void;
-  readonly setLabel: (label: string) => void;
-}
 
 const INK = hexToNum(COLORS.ink);
-const CREAM = hexToNum(COLORS.cream);
 
 export class GameScene extends Phaser.Scene {
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
@@ -143,16 +124,14 @@ export class GameScene extends Phaser.Scene {
   private undoButton!: Button;
   private extraContainerButton!: Button;
 
-  private activePointerId: string | null = null;
-  private dragRunLength = 0;
-  private dragStartX = 0;
-  private dragStartY = 0;
-  private dragging = false;
   private moveCount = 0;
 
-  private tutorialActive = false;
-  private tutorialHand?: Phaser.GameObjects.Container;
-  private tutorialTimers: Phaser.Time.TimerEvent[] = [];
+  // Girdi (dokun/sürükle), animasyon/juice-fx ve öğretici -- ayrı modüllere taşındı (bkz.
+  // gameInput.ts / gameAnimations.ts / gameTutorial.ts). GameScene bunları "host" arayüzleriyle
+  // besler; her biri create()'de taze bir örnekle kurulur (önceki oturumdan durum sızmasın diye).
+  private inputController!: GameInputController;
+  private fx!: GameJuiceFx;
+  private tutorial!: TutorialController;
 
   constructor() {
     super('GameScene');
@@ -182,15 +161,45 @@ export class GameScene extends Phaser.Scene {
     this.wasStuck = false;
     this.levelStartTime = Date.now();
     this.undoCount = 0;
-    this.activePointerId = null;
-    this.dragRunLength = 0;
-    this.dragging = false;
     this.moveCount = 0;
     this.extraContainerUsesLeft = DIFFICULTY.extraContainerFreeUsesPerLevel;
-    this.tutorialActive = false;
-    this.tutorialHand = undefined;
-    this.tutorialTimers = [];
     this.confetti = new ConfettiEmitter(this, 200);
+
+    this.fx = new GameJuiceFx({
+      scene: this,
+      getLayout: (id) => this.layouts.get(id),
+      getItemsLayerChildren: () => this.itemsLayer.list as Phaser.GameObjects.Container[],
+      getGameState: () => this.gameState,
+      getSlotHeight: () => this.slotHeight,
+      getStarAnchor: () => this.starAnchor,
+      getLang: () => this.lang,
+      spawnItemVisual: (type, x, y) => this.spawnItemVisual(type, x, y),
+    });
+    this.tutorial = new TutorialController({
+      scene: this,
+      getGameState: () => this.gameState,
+      getLayout: (id) => this.layouts.get(id),
+      getSlotHeight: () => this.slotHeight,
+      isAnimating: () => this.isAnimating,
+    });
+    this.inputController = new GameInputController({
+      isAnimating: () => this.isAnimating,
+      findContainerAt: (x, y) => this.findContainerAt(x, y),
+      getTopRunLengthFor: (id) => {
+        const container = this.gameState.containers.find((c) => c.id === id);
+        return container ? getTopRunLength(container) : 0;
+      },
+      getSelectedId: () => this.selectedId,
+      setSelectedId: (id) => {
+        this.selectedId = id;
+      },
+      moveRunVisual: (id, dx, dy) => this.fx.moveRunVisual(id, dx, dy),
+      drawFrames: () => this.drawFrames(),
+      render: () => this.render(),
+      attemptMove: (sourceId, targetId) => this.attemptMove(sourceId, targetId),
+      feedbackTap: () => this.feedback('tap'),
+      cancelTutorial: () => this.tutorial.cancel(),
+    });
 
     const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
     this.safeTop = insets.top;
@@ -204,7 +213,7 @@ export class GameScene extends Phaser.Scene {
     const headerY = this.safeTop + 26;
 
     if (this.sessionMode === 'progress' || this.sessionMode === 'daily') {
-      this.createBackButton(insets.left + 30, headerY, () => {
+      createBackButton(this, insets.left + 30, headerY, () => {
         if (!this.isAnimating) fadeToScene(this, 'RoomScene');
       });
     }
@@ -236,7 +245,7 @@ export class GameScene extends Phaser.Scene {
     pill.setDepth(0);
 
     this.starAnchor = { x: this.scale.width / 2 + pillW / 2 - 24, y: headerY };
-    this.drawStarGlyph(this.starAnchor.x, this.starAnchor.y, 9);
+    drawStarGlyph(this, this.starAnchor.x, this.starAnchor.y, 9);
 
     this.statusSubText = this.add
       .text(this.scale.width / 2, headerY + 32, '', {
@@ -264,19 +273,23 @@ export class GameScene extends Phaser.Scene {
     this.itemsLayer = this.add.container(0, 0);
 
     const buttonY = this.scale.height - this.safeBottom - BUTTON_HEIGHT / 2 - 6;
-    this.undoButton = this.createButton(
+    this.undoButton = createButton(
+      this,
       this.scale.width / 2 - (BUTTON_WIDTH + 20) / 2,
       buttonY,
       t('undoButton', this.lang),
       'undo',
       () => this.onUndo(),
+      () => this.isAnimating,
     );
-    this.extraContainerButton = this.createButton(
+    this.extraContainerButton = createButton(
+      this,
       this.scale.width / 2 + (BUTTON_WIDTH + 20) / 2,
       buttonY,
       this.extraContainerLabel(),
       'plus',
       () => this.onAddExtraContainer(),
+      () => this.isAnimating,
     );
     this.extraContainerButton.setEnabled(this.extraContainerUsesLeft > 0);
 
@@ -284,17 +297,17 @@ export class GameScene extends Phaser.Scene {
     this.refreshAll();
     this.checkStuckOrWin();
 
-    this.input.on('pointerdown', this.onPointerDown, this);
-    this.input.on('pointermove', this.onPointerMove, this);
-    this.input.on('pointerup', this.onPointerUp, this);
+    this.input.on('pointerdown', this.inputController.onPointerDown, this.inputController);
+    this.input.on('pointermove', this.inputController.onPointerMove, this.inputController);
+    this.input.on('pointerup', this.inputController.onPointerUp, this.inputController);
 
     if (this.sessionMode === 'progress' && this.levelNumber === 1 && !this.saveData.seenHints.includes(MOVE_TUTORIAL_HINT_KEY)) {
       this.saveData = { ...this.saveData, seenHints: [...this.saveData.seenHints, MOVE_TUTORIAL_HINT_KEY] };
       this.saveService.save(this.saveData);
-      this.time.delayedCall(500, () => this.startTutorialHand());
+      this.time.delayedCall(500, () => this.tutorial.start());
     }
 
-    this.scheduleBlink();
+    this.fx.scheduleBlink();
     this.maybeShowObstacleHints(loaded.obstacles);
   }
 
@@ -375,7 +388,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------------
-  // Görsel: arkaplan, header, butonlar, yıldız ikonu
+  // Görsel: arkaplan
   // ---------------------------------------------------------------------
 
   private drawBackground(): void {
@@ -429,93 +442,6 @@ export class GameScene extends Phaser.Scene {
     g.strokeEllipse(w / 2, rugY, rugW * 0.9, rugH * 0.86);
     g.lineStyle(2, 0xffffff, 0.24);
     g.strokeEllipse(w / 2, rugY, rugW * 0.5, rugH * 0.46);
-  }
-
-  private createBackButton(x: number, y: number, onTap: () => void): void {
-    const r = 22;
-    const g = this.add.graphics();
-    g.fillStyle(hexToNum(COLORS.surface), 0.85);
-    g.fillCircle(x, y, r);
-    g.lineStyle(2, hexToNum(COLORS.coral), 0.6);
-    g.strokeCircle(x, y, r);
-    g.lineStyle(3, INK, 0.75);
-    g.lineBetween(x + 5, y - 7, x - 5, y);
-    g.lineBetween(x - 5, y, x + 5, y + 7);
-
-    const zone = this.add.zone(x, y, MIN_TOUCH_TARGET, MIN_TOUCH_TARGET).setInteractive({ useHandCursor: true });
-    zone.on('pointerup', onTap);
-  }
-
-  private starPoints(r: number): { x: number; y: number }[] {
-    const points: { x: number; y: number }[] = [];
-    for (let i = 0; i < 10; i++) {
-      const angle = (Math.PI / 5) * i - Math.PI / 2;
-      const radius = i % 2 === 0 ? r : r * 0.45;
-      points.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-    }
-    return points;
-  }
-
-  private drawStarGlyph(x: number, y: number, r: number): void {
-    const g = this.add.graphics({ x, y });
-    g.fillStyle(hexToNum(COLORS.gold), 1);
-    g.fillPoints(this.starPoints(r), true);
-  }
-
-  private createButton(x: number, y: number, label: string, icon: 'undo' | 'plus', onTap: () => void): Button {
-    const bg = this.add.graphics();
-    const draw = (enabled: boolean) => {
-      bg.clear();
-      // Not: büyük yarıçaplı (hap) bir fillRoundedRect'e fillGradientStyle uygulamak bu Phaser
-      // sürümünde WebGL'de köşelerde görünür hatalı facet/çentik üretiyor -- bu yüzden hap
-      // butonlarda düz dolgu + üstte ayrı bir "parlama" şerit kullanılır (gradient değil).
-      bg.fillStyle(enabled ? hexToNum(COLORS.coral) : hexToNum(COLORS.surfaceMuted), 1);
-      bg.fillRoundedRect(x - BUTTON_WIDTH / 2, y - BUTTON_HEIGHT / 2, BUTTON_WIDTH, BUTTON_HEIGHT, BUTTON_HEIGHT / 2);
-      if (enabled) {
-        bg.fillStyle(0xffffff, 0.18);
-        bg.fillRoundedRect(
-          x - BUTTON_WIDTH / 2 + 6,
-          y - BUTTON_HEIGHT / 2 + 4,
-          BUTTON_WIDTH - 12,
-          BUTTON_HEIGHT * 0.42,
-          BUTTON_HEIGHT * 0.3,
-        );
-      }
-      const iconColor = enabled ? CREAM : hexToNum(COLORS.inkSoft);
-      const ix = x - BUTTON_WIDTH / 2 + 26;
-      bg.lineStyle(3, iconColor, 1);
-      if (icon === 'undo') {
-        strokeArc(bg, ix, y, 8, 160, 430);
-        bg.fillStyle(iconColor, 1);
-        bg.fillTriangle(ix - 10, y - 7, ix - 10, y + 1, ix - 3, y - 3);
-      } else {
-        bg.lineBetween(ix - 7, y, ix + 7, y);
-        bg.lineBetween(ix, y - 7, ix, y + 7);
-      }
-    };
-    draw(true);
-
-    const text = this.add
-      .text(x + 10, y, label, { fontFamily: 'Fredoka, sans-serif', fontSize: '15px', fontStyle: '600', color: COLORS.cream })
-      .setOrigin(0.5);
-
-    const zone = this.add.zone(x, y, BUTTON_WIDTH, BUTTON_HEIGHT).setInteractive({ useHandCursor: true });
-    let enabled = true;
-    zone.on('pointerup', () => {
-      if (enabled && !this.isAnimating) onTap();
-    });
-
-    return {
-      setEnabled: (value: boolean) => {
-        enabled = value;
-        draw(value);
-        text.setAlpha(value ? 1 : 0.6);
-        text.setColor(value ? COLORS.cream : COLORS.inkSoft);
-      },
-      setLabel: (value: string) => {
-        text.setText(value);
-      },
-    };
   }
 
   // ---------------------------------------------------------------------
@@ -745,87 +671,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------------
-  // Girdi
+  // Hamle yürütme (girdi denetleyicisi tarafından çağrılır)
   // ---------------------------------------------------------------------
-
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    this.cancelTutorial();
-    if (this.isAnimating) return;
-    const id = this.findContainerAt(pointer.x, pointer.y);
-    if (!id) return;
-    const container = this.gameState.containers.find((c) => c.id === id)!;
-
-    // activePointerId her kapta (boş olsa bile) set edilir: tap-select akışında
-    // ikinci dokunuş (hedef) boş bir kaba yapılabilir. Sürükleme sadece dolu
-    // kaynaklarda anlamlıdır (dragRunLength=0 ise moveRunVisual zaten no-op olur).
-    this.activePointerId = id;
-    this.dragRunLength = getTopRunLength(container);
-    this.dragStartX = pointer.x;
-    this.dragStartY = pointer.y;
-    this.dragging = false;
-  }
-
-  private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (this.isAnimating || !this.activePointerId) return;
-    const dx = pointer.x - this.dragStartX;
-    const dy = pointer.y - this.dragStartY;
-    if (!this.dragging && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
-      this.dragging = true;
-    }
-    if (this.dragging) {
-      this.moveRunVisual(this.activePointerId, dx, dy);
-    }
-  }
-
-  private onPointerUp(pointer: Phaser.Input.Pointer): void {
-    if (this.isAnimating) return;
-    const pressedId = this.activePointerId;
-    const wasDragging = this.dragging;
-    this.activePointerId = null;
-    this.dragging = false;
-
-    if (!pressedId) {
-      // Boş alana dokunma: seçimi iptal eder.
-      if (!this.findContainerAt(pointer.x, pointer.y) && this.selectedId) {
-        this.selectedId = null;
-        this.drawFrames();
-        this.render();
-      }
-      return;
-    }
-
-    if (wasDragging) {
-      const targetId = this.findContainerAt(pointer.x, pointer.y);
-      this.selectedId = null;
-      if (targetId && targetId !== pressedId) {
-        this.attemptMove(pressedId, targetId);
-      } else {
-        this.render();
-      }
-      return;
-    }
-
-    // Gerçek sürükleme olmadı: bu bir "tap" (dokun-seç-taşı akışı).
-    if (this.selectedId === null) {
-      this.selectedId = pressedId;
-      this.feedback('tap');
-    } else if (this.selectedId === pressedId) {
-      this.selectedId = null;
-    } else {
-      const sourceId = this.selectedId;
-      this.selectedId = null;
-      this.attemptMove(sourceId, pressedId);
-      return;
-    }
-    this.drawFrames();
-    this.render();
-  }
 
   private attemptMove(sourceId: string, targetId: string): void {
     const outcome = tryMove(this.gameState, { sourceId, targetId });
     if (!outcome.ok) {
       this.feedback('invalid');
-      this.flashInvalid(targetId);
+      this.fx.flashInvalid(targetId);
       this.drawFrames();
       this.render();
       return;
@@ -844,20 +697,20 @@ export class GameScene extends Phaser.Scene {
     this.drawFrames();
     this.render();
 
-    this.animateMove(sourceId, targetId, movedType, movedCount, () => {
+    this.fx.animateMove(sourceId, targetId, movedType, movedCount, () => {
       this.gameState = newState;
       this.isAnimating = false;
       this.drawFrames();
       this.render();
-      this.playLandBounce(targetId, movedCount);
+      this.fx.playLandBounce(targetId, movedCount);
       this.feedback('land');
 
       if (completion) {
         this.comboCount++;
-        this.flashCompletion(targetId);
+        this.fx.flashCompletion(targetId);
         this.feedback('complete');
         if (this.comboCount >= JUICE.combo.minComboToShow) {
-          this.showCombo(targetId, this.comboCount);
+          this.fx.showCombo(targetId, this.comboCount);
         }
       } else {
         this.comboCount = 0;
@@ -975,109 +828,15 @@ export class GameScene extends Phaser.Scene {
     const effectiveMoves = this.moveCount + this.undoCount;
     const rating = this.par <= 0 ? 3 : effectiveMoves <= this.par ? 3 : effectiveMoves <= this.par * 1.3 ? 2 : 1;
 
-    this.showLevelCompletePanel(rating, awarded);
-  }
-
-  /** Seviye bitiş paneli: 1-3 derecelendirme yıldızı sırayla belirir, kazanılan yıldız sayacı sayar,
-   * büyük "Sonraki Seviye" butonu. */
-  private showLevelCompletePanel(rating: number, awarded: number): void {
-    const reduced = prefersReducedMotion();
-    this.confetti.burst(this.scale.width, this.scale.height, reduced);
-
-    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x241437, 0).setOrigin(0, 0).setDepth(300);
-    this.tweens.add({ targets: overlay, fillAlpha: 0.5, duration: 220 });
-
-    const panelW = Math.min(this.scale.width - 56, 340);
-    const panelH = 380;
-    const panel = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
-
-    const bg = this.add.graphics();
-    bg.fillStyle(hexToNum(COLORS.surface), 1);
-    bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
-    bg.lineStyle(3, hexToNum(COLORS.coral), 0.5);
-    bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
-    panel.add(bg);
-
-    const titleKey = this.sessionMode === 'daily' ? 'dailyPuzzleLabel' : 'levelCompleteNoStars';
-    panel.add(
-      this.add
-        .text(0, -panelH / 2 + 40, t(titleKey, this.lang), {
-          fontFamily: 'Fredoka, sans-serif',
-          fontSize: `${TYPE_SCALE.panelTitle}px`,
-          fontStyle: '600',
-          color: COLORS.ink,
-        })
-        .setOrigin(0.5),
-    );
-
-    const starY = -panelH / 2 + 110;
-    const gap = 48;
-    for (let i = 0; i < 3; i++) {
-      const sx = (i - 1) * gap;
-      const filled = i < rating;
-      const starG = this.add.graphics({ x: sx, y: starY });
-      starG.fillStyle(filled ? hexToNum(COLORS.gold) : hexToNum(COLORS.surfaceMuted), 1);
-      starG.fillPoints(this.starPoints(20), true);
-      starG.setScale(0);
-      panel.add(starG);
-      this.tweens.add({
-        targets: starG,
-        scale: 1,
-        duration: JUICE.levelCompletePanel.starPopDuration,
-        delay: 260 + i * JUICE.levelCompletePanel.starPopStaggerMs,
-        ease: 'Back.easeOut',
-      });
-    }
-
-    const counterY = starY + 62;
-    const counterGlyph = this.add.graphics({ x: -36, y: counterY });
-    counterGlyph.fillStyle(hexToNum(COLORS.gold), 1);
-    counterGlyph.fillPoints(this.starPoints(11), true);
-    panel.add(counterGlyph);
-
-    const counterProxy = { n: 0 };
-    const counterText = this.add
-      .text(-16, counterY, '+0', { fontFamily: 'Fredoka, sans-serif', fontSize: '22px', fontStyle: '600', color: COLORS.ink })
-      .setOrigin(0, 0.5);
-    panel.add(counterText);
-    this.tweens.add({
-      targets: counterProxy,
-      n: awarded,
-      duration: JUICE.levelCompletePanel.counterDurationMs,
-      delay: 500,
-      ease: 'Cubic.easeOut',
-      onUpdate: () => counterText.setText(`+${Math.round(counterProxy.n)}`),
+    showLevelCompletePanel(this, {
+      rating,
+      awarded,
+      isDailyPuzzle: this.sessionMode === 'daily',
+      lang: this.lang,
+      confetti: this.confetti,
+      prefersReducedMotion,
+      onNext: () => fadeToScene(this, 'RoomScene'),
     });
-
-    // Birincil: Sonraki Seviye.
-    const btnY = panelH / 2 - 56;
-    const btnW = panelW - 64;
-    const btnH = 56;
-    const btnBg = this.add.graphics();
-    btnBg.fillStyle(hexToNum(COLORS.coral), 1);
-    btnBg.fillRoundedRect(-btnW / 2, btnY - btnH / 2, btnW, btnH, btnH / 2);
-    btnBg.fillStyle(0xffffff, 0.18);
-    btnBg.fillRoundedRect(-btnW / 2 + 8, btnY - btnH / 2 + 5, btnW - 16, btnH * 0.4, btnH * 0.3);
-    panel.add(btnBg);
-    panel.add(
-      this.add
-        .text(0, btnY, t('nextLevelButton', this.lang), {
-          fontFamily: 'Fredoka, sans-serif',
-          fontSize: '19px',
-          fontStyle: '600',
-          color: COLORS.cream,
-        })
-        .setOrigin(0.5),
-    );
-    const btnZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
-    btnZone.on('pointerup', () => {
-      overlay.destroy();
-      panel.destroy();
-      btnZone.destroy();
-      fadeToScene(this, 'RoomScene');
-    });
-
-    this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });
   }
 
   private onLevelLost(): void {
@@ -1091,115 +850,12 @@ export class GameScene extends Phaser.Scene {
       undoCount: this.undoCount,
       moveLimit: this.moveLimit,
     });
-    this.showLevelLostPanel();
-  }
-
-  /** Hamle hakkı bitince: sakin tonlu bir panel ("Hamle Hakkın Bitti"), ardından dolgu birincil
-   * "Tekrar Dene" (aynı seviyeyi yeniden başlatır) + çerçeveli ikincil "Odaya Dön" butonu. */
-  private showLevelLostPanel(): void {
-    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x1a1020, 0).setOrigin(0, 0).setDepth(300);
-    this.tweens.add({ targets: overlay, fillAlpha: 0.6, duration: 220 });
-
-    const panelW = Math.min(this.scale.width - 56, 340);
-    const panelH = 380;
-    const panel = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
-
-    const bg = this.add.graphics();
-    bg.fillStyle(hexToNum(COLORS.surface), 1);
-    bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
-    bg.lineStyle(3, hexToNum(COLORS.amber), 0.5);
-    bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, RADIUS.xl);
-    panel.add(bg);
-
-    // Sakin tonlu başlık rozeti: panel genişliğinden DAR tutulur ve döndürülmez -- panelin
-    // içine temiz oturur, köşelerden taşmaz (eski "kurdele" tasarımındaki taşma hatasının düzeltmesi).
-    const bannerW = panelW - 48;
-    const bannerH = 46;
-    const bannerY = -panelH / 2 + 46;
-    const bannerG = this.add.graphics({ x: 0, y: bannerY });
-    bannerG.fillGradientStyle(hexToNum(COLORS.amber), hexToNum(COLORS.amber), shade(COLORS.amber, -0.12), shade(COLORS.amber, -0.12), 1, 1, 1, 1);
-    bannerG.fillRoundedRect(-bannerW / 2, -bannerH / 2, bannerW, bannerH, bannerH / 2);
-    bannerG.fillStyle(0xffffff, 0.2);
-    bannerG.fillRoundedRect(-bannerW / 2 + 6, -bannerH / 2 + 4, bannerW - 12, bannerH * 0.4, bannerH * 0.3);
-    panel.add(bannerG);
-    panel.add(
-      this.add
-        .text(0, bannerY + 1, t('levelLostTitle', this.lang), {
-          fontFamily: 'Fredoka, sans-serif',
-          fontSize: `${TYPE_SCALE.sectionTitle}px`,
-          fontStyle: '600',
-          color: COLORS.ink,
-        })
-        .setOrigin(0.5),
-    );
-
-    panel.add(
-      this.add
-        .text(0, bannerY + 70, t('levelLostBody', this.lang, { limit: this.moveLimit }), {
-          fontFamily: 'Fredoka, sans-serif',
-          fontSize: '14px',
-          color: COLORS.inkSoft,
-          align: 'center',
-          lineSpacing: 4,
-          wordWrap: { width: panelW - 64 },
-        })
-        .setOrigin(0.5),
-    );
-
-    // Birincil: Tekrar Dene (aynı seviyeyi yeniden başlatır).
-    const btnW = panelW - 64;
-    const primaryBtnH = 56;
-    const primaryY = panelH / 2 - 108;
-    const btnBg = this.add.graphics();
-    btnBg.fillStyle(hexToNum(COLORS.coral), 1);
-    btnBg.fillRoundedRect(-btnW / 2, primaryY - primaryBtnH / 2, btnW, primaryBtnH, primaryBtnH / 2);
-    btnBg.fillStyle(0xffffff, 0.18);
-    btnBg.fillRoundedRect(-btnW / 2 + 8, primaryY - primaryBtnH / 2 + 5, btnW - 16, primaryBtnH * 0.4, primaryBtnH * 0.3);
-    panel.add(btnBg);
-    panel.add(
-      this.add
-        .text(0, primaryY, t('retryButton', this.lang), {
-          fontFamily: 'Fredoka, sans-serif',
-          fontSize: '19px',
-          fontStyle: '600',
-          color: COLORS.cream,
-        })
-        .setOrigin(0.5),
-    );
-    const retryZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + primaryY, btnW, primaryBtnH).setInteractive({ useHandCursor: true });
-    retryZone.on('pointerup', () => {
-      overlay.destroy();
-      panel.destroy();
-      retryZone.destroy();
-      this.restartSameLevel();
+    showLevelLostPanel(this, {
+      moveLimit: this.moveLimit,
+      lang: this.lang,
+      onRetry: () => this.restartSameLevel(),
+      onBackToRoom: () => fadeToScene(this, 'RoomScene'),
     });
-
-    // İkincil: Odaya Dön -- gerçek bir çerçeveli (outline) buton, düz yazı değil.
-    const secondaryBtnH = 46;
-    const secondaryY = panelH / 2 - 40;
-    const secondaryBg = this.add.graphics();
-    secondaryBg.lineStyle(2, hexToNum(COLORS.inkSoft), 0.45);
-    secondaryBg.strokeRoundedRect(-btnW / 2, secondaryY - secondaryBtnH / 2, btnW, secondaryBtnH, secondaryBtnH / 2);
-    panel.add(secondaryBg);
-    panel.add(
-      this.add
-        .text(0, secondaryY, t('backToRoomButton', this.lang), {
-          fontFamily: 'Fredoka, sans-serif',
-          fontSize: '15px',
-          color: COLORS.inkSoft,
-          fontStyle: '600',
-        })
-        .setOrigin(0.5),
-    );
-    const backZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + secondaryY, btnW, Math.max(MIN_TOUCH_TARGET, secondaryBtnH)).setInteractive({ useHandCursor: true });
-    backZone.on('pointerup', () => {
-      overlay.destroy();
-      panel.destroy();
-      backZone.destroy();
-      fadeToScene(this, 'RoomScene');
-    });
-
-    this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: JUICE.levelCompletePanel.panelInDuration, ease: 'Back.easeOut' });
   }
 
   private restartSameLevel(): void {
@@ -1211,7 +867,6 @@ export class GameScene extends Phaser.Scene {
       this.scene.restart();
     }
   }
-
 
   private showStuckBanner(): void {
     this.tweens.add({ targets: this.stuckBanner, alpha: 1, duration: 200 });
@@ -1228,234 +883,8 @@ export class GameScene extends Phaser.Scene {
       const wasLocked = isContainerLocked(c, oldState);
       const isLocked = isContainerLocked(c, newState);
       if (wasLocked && !isLocked) {
-        this.flashUnlock(c.id);
+        this.fx.flashUnlock(c.id);
         this.feedback('medium');
-      }
-    }
-  }
-
-  private flashUnlock(containerId: string): void {
-    const layout = this.layouts.get(containerId);
-    if (!layout) return;
-    const ring = this.add.circle(layout.centerX, layout.topY + layout.rect.height / 2, 14, hexToNum(COLORS.gold), 0.9);
-    this.tweens.add({
-      targets: ring,
-      radius: 90,
-      alpha: 0,
-      duration: JUICE.unlock.duration,
-      onComplete: () => ring.destroy(),
-    });
-  }
-
-  private flashInvalid(containerId: string): void {
-    const layout = this.layouts.get(containerId);
-    if (!layout) return;
-    const g = this.add.graphics();
-    g.lineStyle(5, hexToNum(COLORS.danger), 1);
-    g.strokeRoundedRect(layout.rect.x, layout.rect.y, layout.rect.width, layout.rect.height, RADIUS.lg);
-    this.tweens.add({
-      targets: g,
-      alpha: 0,
-      duration: JUICE.invalid.duration,
-      onComplete: () => g.destroy(),
-    });
-  }
-
-  private flashCompletion(containerId: string): void {
-    const layout = this.layouts.get(containerId);
-    if (!layout) return;
-    const cx = layout.centerX;
-    const cy = layout.topY + layout.rect.height / 2;
-
-    const flash = this.add.graphics();
-    flash.fillStyle(0xffffff, 0.65);
-    flash.fillRoundedRect(layout.rect.x, layout.rect.y, layout.rect.width, layout.rect.height, RADIUS.lg);
-    this.tweens.add({ targets: flash, alpha: 0, duration: 320, onComplete: () => flash.destroy() });
-
-    const burst = this.add.circle(cx, cy, 10, hexToNum(COLORS.coral), 0.8);
-    this.tweens.add({
-      targets: burst,
-      radius: 70,
-      alpha: 0,
-      duration: JUICE.completion.particleDuration,
-      onComplete: () => burst.destroy(),
-    });
-
-    const particleColors = [COLORS.coral, COLORS.turquoise, COLORS.mustard, COLORS.pink];
-    for (let i = 0; i < JUICE.completion.particleCount; i++) {
-      const angle = (Math.PI * 2 * i) / JUICE.completion.particleCount + Math.random() * 0.4;
-      const speed =
-        JUICE.completion.particleSpeedMin +
-        Math.random() * (JUICE.completion.particleSpeedMax - JUICE.completion.particleSpeedMin);
-      const particle = this.add.circle(cx, cy, 4, hexToNum(particleColors[i % particleColors.length]), 1);
-      this.tweens.add({
-        targets: particle,
-        x: cx + Math.cos(angle) * speed,
-        y: cy + Math.sin(angle) * speed,
-        alpha: 0,
-        duration: JUICE.completion.particleDuration,
-        ease: 'Cubic.easeOut',
-        onComplete: () => particle.destroy(),
-      });
-    }
-
-    this.flyStarsToCounter(cx, cy);
-    this.cameras.main.shake(JUICE.completion.cameraShakeDuration, JUICE.completion.cameraShakeIntensity);
-  }
-
-  /** Tamamlanan kaptan küçük yıldızlar fırlayıp üstteki yıldız ikonuna doğru uçar (sadece görsel şenlik). */
-  private flyStarsToCounter(fromX: number, fromY: number): void {
-    for (let i = 0; i < JUICE.starFly.starCount; i++) {
-      this.time.delayedCall(i * JUICE.starFly.staggerMs, () => {
-        const star = this.add.graphics({ x: fromX, y: fromY });
-        star.fillStyle(hexToNum(COLORS.gold), 1);
-        star.fillPoints(this.starPoints(7), true);
-
-        const progress = { t: 0 };
-        this.tweens.add({
-          targets: progress,
-          t: 1,
-          duration: JUICE.starFly.duration,
-          ease: 'Cubic.easeIn',
-          onUpdate: () => {
-            const tt = progress.t;
-            star.x = Phaser.Math.Linear(fromX, this.starAnchor.x, tt);
-            star.y = Phaser.Math.Linear(fromY, this.starAnchor.y, tt) - JUICE.starFly.arcHeight * Math.sin(Math.PI * tt);
-            star.setScale(1 - tt * 0.5);
-          },
-          onComplete: () => star.destroy(),
-        });
-      });
-    }
-  }
-
-  private comboTextFor(combo: number): string {
-    if (combo >= 4) return t('comboText4Plus', this.lang);
-    if (combo === 3) return t('comboText3', this.lang);
-    return t('comboText2', this.lang);
-  }
-
-  private showCombo(containerId: string, combo: number): void {
-    const layout = this.layouts.get(containerId);
-    if (!layout) return;
-    const text = this.add
-      .text(layout.centerX, layout.topY - 10, `${t('comboLabel', this.lang, { n: combo })} ${this.comboTextFor(combo)}`, {
-        fontFamily: 'Fredoka, sans-serif',
-        fontSize: '18px',
-        fontStyle: 'bold',
-        color: COLORS.coral,
-        stroke: '#ffffff',
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5);
-    this.tweens.add({
-      targets: text,
-      y: layout.topY - 10 - JUICE.combo.riseDistance,
-      alpha: 0,
-      duration: JUICE.combo.displayDuration,
-      onComplete: () => text.destroy(),
-    });
-  }
-
-  /** Kaynaktan hedefe tek bir temsili "yongayı" yay çizerek uçurur; iniş anında gerçek render devralır. */
-  private animateMove(
-    sourceId: string,
-    targetId: string,
-    movedType: string,
-    movedCount: number,
-    onComplete: () => void,
-  ): void {
-    const sourceLayout = this.layouts.get(sourceId);
-    const targetLayout = this.layouts.get(targetId);
-    if (!sourceLayout || !targetLayout) {
-      onComplete();
-      return;
-    }
-
-    const oldSource = this.gameState.containers.find((c) => c.id === sourceId)!;
-    const oldTarget = this.gameState.containers.find((c) => c.id === targetId)!;
-
-    const startX = sourceLayout.centerX;
-    const startY =
-      sourceLayout.topY + (oldSource.capacity - oldSource.items.length) * this.slotHeight + this.slotHeight / 2;
-
-    const landingIndex = oldTarget.items.length + movedCount - 1;
-    const endX = targetLayout.centerX;
-    const endY =
-      targetLayout.topY + (oldTarget.capacity - 1 - landingIndex) * this.slotHeight + this.slotHeight / 2;
-
-    // Uçuşta çakışma olmaması için kaynaktaki (henüz gerçek state'ten silinmemiş) taşınan
-    // itemlerin görsellerini geçici olarak gizle -- uçuş bitince zaten tam render() devralıyor.
-    const minHiddenIndex = Math.max(0, oldSource.items.length - movedCount);
-    const children = this.itemsLayer.list as Phaser.GameObjects.Container[];
-    for (const child of children) {
-      if (child.getData('containerId') !== sourceId) continue;
-      const idx = child.getData('stackIndex') as number;
-      if (idx >= minHiddenIndex) child.setVisible(false);
-    }
-
-    const chip = this.spawnItemVisual(movedType, startX, startY);
-    if (movedCount > 1) {
-      const badge = this.add
-        .text(16, -14, `×${movedCount}`, {
-          fontFamily: 'Fredoka, sans-serif',
-          fontSize: '12px',
-          fontStyle: 'bold',
-          color: '#ffffff',
-          backgroundColor: COLORS.ink,
-          padding: { x: 4, y: 1 },
-        })
-        .setOrigin(0.5);
-      chip.add(badge);
-    }
-
-    const progress = { t: 0 };
-    this.tweens.add({
-      targets: progress,
-      t: 1,
-      duration: JUICE.move.duration,
-      ease: 'Quad.easeInOut',
-      onUpdate: () => {
-        const t = progress.t;
-        const x = Phaser.Math.Linear(startX, endX, t);
-        const y = Phaser.Math.Linear(startY, endY, t) - JUICE.move.arcHeight * Math.sin(Math.PI * t);
-        chip.setPosition(x, y);
-      },
-      onComplete: () => {
-        chip.destroy();
-        onComplete();
-      },
-    });
-  }
-
-  /** Hedefte yeni yerleşen itemlerin squash & stretch sıçraması. */
-  private playLandBounce(containerId: string, movedCount: number): void {
-    const container = this.gameState.containers.find((c) => c.id === containerId);
-    if (!container) return;
-    const minIndex = Math.max(0, container.items.length - movedCount);
-
-    const children = this.itemsLayer.list as Phaser.GameObjects.Container[];
-    for (const child of children) {
-      if (child.getData('containerId') !== containerId) continue;
-      const idx = child.getData('stackIndex') as number;
-      if (idx < minIndex) continue;
-      child.setScale(JUICE.land.squashScaleX, JUICE.land.squashScaleY);
-      this.tweens.add({
-        targets: child,
-        scaleX: 1,
-        scaleY: 1,
-        duration: JUICE.land.duration,
-        ease: 'Back.easeOut',
-      });
-    }
-  }
-
-  /** Sürükleme sırasında kaynağın üst run'ını pointer ile birlikte öteler. */
-  private moveRunVisual(containerId: string, dx: number, dy: number): void {
-    const children = this.itemsLayer.list as Phaser.GameObjects.Container[];
-    for (const child of children) {
-      if (child.getData('containerId') === containerId && child.getData('inDragRun') === true) {
-        child.setPosition(child.getData('baseX') + dx, child.getData('baseY') + dy);
       }
     }
   }
@@ -1464,6 +893,8 @@ export class GameScene extends Phaser.Scene {
     this.itemsLayer.removeAll(true);
 
     const total = this.gameState.containers.reduce((sum, c) => sum + c.items.length, 0);
+    const activePointerId = this.inputController.getActivePointerId();
+    const dragRunLength = this.inputController.getDragRunLength();
 
     for (const c of this.gameState.containers) {
       const layout = this.layouts.get(c.id)!;
@@ -1485,7 +916,7 @@ export class GameScene extends Phaser.Scene {
         visual.setData('containerId', c.id);
         visual.setData('stackIndex', idx);
         visual.setData('isTop', isTopItem);
-        visual.setData('inDragRun', idx >= c.items.length - this.dragRunLength && c.id === this.activePointerId);
+        visual.setData('inDragRun', idx >= c.items.length - dragRunLength && c.id === activePointerId);
         visual.setData('baseX', x);
         visual.setData('baseY', restY);
         this.itemsLayer.add(visual);
@@ -1562,8 +993,8 @@ export class GameScene extends Phaser.Scene {
     const inset = 7;
     const dotsPerSide = 5;
     for (let i = 0; i < dotsPerSide; i++) {
-      const t = i / (dotsPerSide - 1);
-      const ex = -bodyW / 2 + inset + t * (bodyW - inset * 2);
+      const tt = i / (dotsPerSide - 1);
+      const ex = -bodyW / 2 + inset + tt * (bodyW - inset * 2);
       g.fillCircle(ex, -bodyH / 2 + inset, dotR);
       g.fillCircle(ex, bodyH / 2 - inset, dotR);
     }
@@ -1576,134 +1007,5 @@ export class GameScene extends Phaser.Scene {
         .setOrigin(0.5),
     );
     return container;
-  }
-
-  // ---------------------------------------------------------------------
-  // Göz kırpma (rastgele, yalnızca en üstteki görünür karakterlerde)
-  // ---------------------------------------------------------------------
-
-  private scheduleBlink(): void {
-    const delay = Phaser.Math.Between(JUICE.blink.everyMsMin, JUICE.blink.everyMsMax);
-    this.time.delayedCall(delay, () => {
-      this.blinkRandomTopItem();
-      this.scheduleBlink();
-    });
-  }
-
-  private blinkRandomTopItem(): void {
-    const children = (this.itemsLayer?.list ?? []) as Phaser.GameObjects.Container[];
-    const topVisibles = children.filter((c) => c.visible && c.getData('isTop') === true && c.getData('setEyeState'));
-    if (topVisibles.length === 0) return;
-    const target = Phaser.Utils.Array.GetRandom(topVisibles) as Phaser.GameObjects.Container;
-    const setEyeState = target.getData('setEyeState') as ((s: 'open' | 'closed') => void) | undefined;
-    if (!setEyeState) return;
-    setEyeState('closed');
-    this.time.delayedCall(JUICE.blink.closeDuration + JUICE.blink.holdDuration, () => setEyeState('open'));
-  }
-
-  // ---------------------------------------------------------------------
-  // İlk seviye el animasyonlu öğretici
-  // ---------------------------------------------------------------------
-
-  private findTutorialMove(): { sourceId: string; targetId: string } | null {
-    const containers = this.gameState.containers;
-    for (const source of containers) {
-      if (source.items.length === 0) continue;
-      for (const target of containers) {
-        if (target.id === source.id) continue;
-        if (tryMove(this.gameState, { sourceId: source.id, targetId: target.id }).ok) {
-          return { sourceId: source.id, targetId: target.id };
-        }
-      }
-    }
-    return null;
-  }
-
-  private startTutorialHand(): void {
-    if (this.isAnimating) return;
-    const move = this.findTutorialMove();
-    if (!move) return;
-    const sourceLayout = this.layouts.get(move.sourceId);
-    const targetLayout = this.layouts.get(move.targetId);
-    if (!sourceLayout || !targetLayout) return;
-
-    this.tutorialActive = true;
-    const sourcePoint = {
-      x: sourceLayout.centerX,
-      y: sourceLayout.topY + sourceLayout.rect.height - this.slotHeight / 2,
-    };
-    const targetPoint = {
-      x: targetLayout.centerX,
-      y: targetLayout.topY + targetLayout.rect.height - this.slotHeight / 2,
-    };
-
-    const hand = this.drawHandGlyph();
-    hand.setPosition(sourcePoint.x, sourcePoint.y);
-    hand.setAlpha(0);
-    this.tutorialHand = hand;
-
-    const runCycle = () => {
-      if (!this.tutorialActive) return;
-      hand.setPosition(sourcePoint.x, sourcePoint.y);
-      hand.setScale(1);
-      this.tweens.add({ targets: hand, alpha: 1, duration: 200 });
-      const press1 = this.time.delayedCall(260, () => {
-        if (!this.tutorialActive) return;
-        this.tweens.add({ targets: hand, scaleX: 0.85, scaleY: 0.85, duration: JUICE.tutorialHand.pressDuration, yoyo: true });
-      });
-      const travel = this.time.delayedCall(560, () => {
-        if (!this.tutorialActive) return;
-        const progress = { t: 0 };
-        this.tweens.add({
-          targets: progress,
-          t: 1,
-          duration: JUICE.tutorialHand.travelDuration,
-          ease: 'Sine.easeInOut',
-          onUpdate: () => {
-            const tt = progress.t;
-            hand.x = Phaser.Math.Linear(sourcePoint.x, targetPoint.x, tt);
-            hand.y = Phaser.Math.Linear(sourcePoint.y, targetPoint.y, tt) - 50 * Math.sin(Math.PI * tt);
-          },
-        });
-      });
-      const press2 = this.time.delayedCall(560 + JUICE.tutorialHand.travelDuration, () => {
-        if (!this.tutorialActive) return;
-        this.tweens.add({ targets: hand, scaleX: 0.85, scaleY: 0.85, duration: JUICE.tutorialHand.pressDuration, yoyo: true });
-      });
-      const fade = this.time.delayedCall(560 + JUICE.tutorialHand.travelDuration + JUICE.tutorialHand.holdDuration, () => {
-        if (!this.tutorialActive) return;
-        this.tweens.add({ targets: hand, alpha: 0, duration: 200 });
-      });
-      const loop = this.time.delayedCall(
-        560 + JUICE.tutorialHand.travelDuration + JUICE.tutorialHand.holdDuration + 200 + JUICE.tutorialHand.cycleGapMs,
-        runCycle,
-      );
-      this.tutorialTimers.push(press1, travel, press2, fade, loop);
-    };
-
-    runCycle();
-  }
-
-  private drawHandGlyph(): Phaser.GameObjects.Container {
-    const g = this.add.graphics();
-    const skin = hexToNum('#F2C49B');
-    g.fillStyle(0x000000, 0.18);
-    g.fillEllipse(2, 24, 26, 10);
-    g.fillStyle(skin, 1);
-    g.fillRoundedRect(-14, -4, 26, 26, 10);
-    g.fillRoundedRect(-4, -28, 11, 28, 5);
-    g.fillCircle(1.5, -28, 5.5);
-    g.lineStyle(2, shade('#F2C49B', -0.25), 0.6);
-    g.strokeRoundedRect(-14, -4, 26, 26, 10);
-    return this.add.container(0, 0, [g]).setDepth(400);
-  }
-
-  private cancelTutorial(): void {
-    if (!this.tutorialActive) return;
-    this.tutorialActive = false;
-    for (const timer of this.tutorialTimers) timer.remove(false);
-    this.tutorialTimers = [];
-    this.tutorialHand?.destroy();
-    this.tutorialHand = undefined;
   }
 }
