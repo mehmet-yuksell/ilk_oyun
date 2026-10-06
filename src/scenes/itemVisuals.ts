@@ -5,10 +5,11 @@ import type { ItemType } from '../core/types';
 import { COLORS, HIGHLIGHT, ITEM_ACCENTS, SHADOW, hexToNum, shade } from './theme';
 
 /**
- * Her eşya türü artık SEVİMLİ BİR KARAKTER: kendi siluetinden (kitap/kupa/saksı bitkisi/kavanoz/
- * ayıcık/lamba/vazo/tabak/çerçeve/saat) VE kendi yüzünden (büyük parlak gözler + ağız + yanak
- * lekesi) tanınabilir. Her çizim: 2-3 tonlu degrade gövde + üstte parlama + altta yumuşak gölge +
- * gövdenin koyu tonunda ince kontur + yüz. Düz tek renk şekil YASAK.
+ * Her eşya türü kendi siluetinden (kitap/kupa/saksı bitkisi/kavanoz/ayıcık/lamba/vazo/tabak/
+ * çerçeve/saat) VE sade bir yüzünden (küçük nokta gözler + ince gülümseme, yanak allığı yok --
+ * bkz. Faz 4 kararları: eski yüz çok "çocuksu/yapay" okunuyordu) tanınabilir. Her çizim aynı
+ * dili paylaşır: 2-3 tonlu degrade gövde + üstte parlama + altta yumuşak gölge + gövdenin koyu
+ * tonunda ince kontur (tüm türlerde aynı kalınlık). Düz tek renk şekil YASAK.
  */
 
 const ACCENT_BY_TYPE: Record<string, string> = Object.fromEntries(
@@ -21,7 +22,6 @@ export function accentFor(type: ItemType): string {
 
 const INK = hexToNum(COLORS.ink);
 const CREAM = hexToNum(COLORS.cream);
-const BLUSH = hexToNum(COLORS.pink);
 
 function shadowBase(g: Phaser.GameObjects.Graphics, w: number, h: number): void {
   g.fillStyle(SHADOW.color, SHADOW.alpha);
@@ -75,7 +75,7 @@ export function strokeArc(
 }
 
 // ---------------------------------------------------------------------
-// Yüz: her karakterin gövdesi üzerine bindirilen ortak göz/ağız/yanak sistemi.
+// Yüz: her karakterin gövdesi üzerine bindirilen ortak, sade göz/ağız sistemi.
 // ---------------------------------------------------------------------
 
 export type EyeState = 'open' | 'closed';
@@ -86,37 +86,34 @@ export interface FaceSpec {
   readonly eyeR: number;
   readonly mouthY: number;
   readonly mouthR: number;
-  readonly cheekY: number;
-  readonly cheekGapX: number;
-  readonly cheekR: number;
 }
 
+/**
+ * Sadeleştirilmiş yüz: yanak allığı YOK (en "çocuksu" okunan öğeydi), gözler tek tonlu dolgu +
+ * tek küçük parıltı noktasıyla temiz bir nokta-göz hissi verir, ağız ince ve küçük bir gülümseme
+ * -- "tutarlı gölge/parlama/temiz şekil" diline uysun diye gövdedeki gloss() ile aynı beyaz tonu
+ * paylaşır (bkz. Faz 4 kararları: gözlem -- eski yüz çok "sevimli/yapay" okunuyordu).
+ */
 function drawFace(g: Phaser.GameObjects.Graphics, spec: FaceSpec, eyeState: EyeState, excited: boolean): void {
   g.clear();
   const eyeScale = excited ? JUICE.excited.eyeScale : 1;
-  const r = spec.eyeR * eyeScale;
-
-  g.fillStyle(BLUSH, 0.4);
-  g.fillCircle(-spec.cheekGapX, spec.cheekY, spec.cheekR);
-  g.fillCircle(spec.cheekGapX, spec.cheekY, spec.cheekR);
+  const r = spec.eyeR * eyeScale * 0.82;
 
   for (const sign of [-1, 1] as const) {
     const ex = sign * spec.eyeGapX;
     if (eyeState === 'closed') {
-      g.lineStyle(Math.max(1.6, r * 0.42), INK, 0.85);
-      g.lineBetween(ex - r * 0.85, spec.eyeY, ex + r * 0.85, spec.eyeY);
+      g.lineStyle(Math.max(1.5, r * 0.4), INK, 0.8);
+      g.lineBetween(ex - r * 0.8, spec.eyeY, ex + r * 0.8, spec.eyeY);
     } else {
-      g.fillStyle(0xffffff, 1);
+      g.fillStyle(INK, 0.82);
       g.fillCircle(ex, spec.eyeY, r);
-      g.fillStyle(INK, 0.92);
-      g.fillCircle(ex + r * 0.1, spec.eyeY + r * 0.2, r * 0.56);
-      g.fillStyle(0xffffff, 0.95);
-      g.fillCircle(ex - r * 0.22, spec.eyeY - r * 0.24, r * 0.2);
+      g.fillStyle(0xffffff, 0.8);
+      g.fillCircle(ex - r * 0.22, spec.eyeY - r * 0.24, r * 0.26);
     }
   }
 
-  g.lineStyle(Math.max(1.4, spec.eyeR * 0.2), INK, 0.75);
-  strokeArc(g, 0, spec.mouthY - spec.mouthR * 0.2, spec.mouthR, 25, 155, 8);
+  g.lineStyle(Math.max(1.2, spec.eyeR * 0.16), INK, 0.6);
+  strokeArc(g, 0, spec.mouthY - spec.mouthR * 0.15, spec.mouthR * 0.75, 35, 145, 6);
 }
 
 interface FaceController {
@@ -164,7 +161,7 @@ function drawBook(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: 
   g.fillStyle(CREAM, 0.85);
   g.fillRect(bw * 0.06, bh * 0.28, bw * 0.36, 2.4);
   gloss(g, -bw * 0.16, -bh * 0.3, bw * 0.4, bh * 0.2);
-  return { eyeY: -bh * 0.04, eyeGapX: bw * 0.15, eyeR: bh * 0.15, mouthY: bh * 0.26, mouthR: bw * 0.13, cheekY: bh * 0.1, cheekGapX: bw * 0.27, cheekR: bh * 0.1 };
+  return { eyeY: -bh * 0.04, eyeGapX: bw * 0.15, eyeR: bh * 0.15, mouthY: bh * 0.26, mouthR: bw * 0.13 };
 }
 
 function drawCup(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -188,7 +185,7 @@ function drawCup(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: s
   g.lineBetween(bw * 0.2, top - 10, bw * 0.08, top - 16);
   gloss(g, -bw * 0.2, top + bh * 0.22, bw * 0.3, bh * 0.3);
   const faceCy = top + bh * 0.56;
-  return { eyeY: faceCy - bh * 0.1, eyeGapX: bw * 0.2, eyeR: bh * 0.16, mouthY: faceCy + bh * 0.16, mouthR: bw * 0.16, cheekY: faceCy + bh * 0.02, cheekGapX: bw * 0.32, cheekR: bh * 0.1 };
+  return { eyeY: faceCy - bh * 0.1, eyeGapX: bw * 0.2, eyeR: bh * 0.16, mouthY: faceCy + bh * 0.16, mouthR: bw * 0.16 };
 }
 
 function drawPlant(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -224,7 +221,7 @@ function drawPlant(g: Phaser.GameObjects.Graphics, w: number, h: number, accent:
   g.fillTriangle(0, potY - potH * 0.9, -s * 0.1, potY + 2, s * 0.1, potY + 2);
   gloss(g, -potW * 0.15, potY + potH * 0.3, potW * 0.3, potH * 0.3);
   const faceCy = potY + potH * 0.42;
-  return { eyeY: faceCy - potH * 0.08, eyeGapX: potW * 0.18, eyeR: potH * 0.22, mouthY: faceCy + potH * 0.24, mouthR: potW * 0.16, cheekY: faceCy + potH * 0.06, cheekGapX: potW * 0.3, cheekR: potH * 0.14 };
+  return { eyeY: faceCy - potH * 0.08, eyeGapX: potW * 0.18, eyeR: potH * 0.22, mouthY: faceCy + potH * 0.24, mouthR: potW * 0.16 };
 }
 
 function drawJar(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -242,7 +239,7 @@ function drawJar(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: s
   g.fillStyle(CREAM, 0.95);
   g.fillRoundedRect(-neckW / 2 - 2, bodyY - bodyH / 2 - 12, neckW + 4, 6, 2);
   gloss(g, -bodyW * 0.18, bodyY - bodyH * 0.18, bodyW * 0.3, bodyH * 0.32);
-  return { eyeY: bodyY - bodyH * 0.02, eyeGapX: bodyW * 0.2, eyeR: bodyH * 0.14, mouthY: bodyY + bodyH * 0.22, mouthR: bodyW * 0.16, cheekY: bodyY + bodyH * 0.08, cheekGapX: bodyW * 0.3, cheekR: bodyH * 0.1 };
+  return { eyeY: bodyY - bodyH * 0.02, eyeGapX: bodyW * 0.2, eyeR: bodyH * 0.14, mouthY: bodyY + bodyH * 0.22, mouthR: bodyW * 0.16 };
 }
 
 function drawTeddyBear(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -258,13 +255,13 @@ function drawTeddyBear(g: Phaser.GameObjects.Graphics, w: number, h: number, acc
   g.fillCircle(headR * 0.95, headY - headR * 0.9, headR * 0.42);
   g.fillEllipse(0, bodyY, bodyW, bodyH);
   g.fillCircle(0, headY, headR);
-  contour(g, accent, 1.4);
+  contour(g, accent);
   g.strokeCircle(0, headY, headR);
   g.strokeEllipse(0, bodyY, bodyW, bodyH);
   g.fillStyle(shade(accent, -0.2), 1);
   g.fillEllipse(0, headY + headR * 0.4, headR * 0.5, headR * 0.34);
   gloss(g, -bodyW * 0.14, bodyY - bodyH * 0.2, bodyW * 0.28, bodyH * 0.26);
-  return { eyeY: headY - headR * 0.08, eyeGapX: headR * 0.36, eyeR: headR * 0.22, mouthY: headY + headR * 0.22, mouthR: headR * 0.26, cheekY: headY + headR * 0.08, cheekGapX: headR * 0.52, cheekR: headR * 0.17 };
+  return { eyeY: headY - headR * 0.08, eyeGapX: headR * 0.36, eyeR: headR * 0.22, mouthY: headY + headR * 0.22, mouthR: headR * 0.26 };
 }
 
 function drawLamp(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -297,7 +294,7 @@ function drawLamp(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: 
   g.fillRect(-2, shadeY + shadeH / 2, 4, s * 0.34);
   g.fillEllipse(0, shadeY + shadeH / 2 + s * 0.36, s * 0.46, s * 0.14);
   gloss(g, -shadeW * 0.12, shadeY - shadeH * 0.1, shadeW * 0.3, shadeH * 0.26);
-  return { eyeY: shadeY + shadeH * 0.04, eyeGapX: shadeW * 0.16, eyeR: shadeH * 0.26, mouthY: shadeY + shadeH * 0.38, mouthR: shadeW * 0.15, cheekY: shadeY + shadeH * 0.22, cheekGapX: shadeW * 0.26, cheekR: shadeH * 0.16 };
+  return { eyeY: shadeY + shadeH * 0.04, eyeGapX: shadeW * 0.16, eyeR: shadeH * 0.26, mouthY: shadeY + shadeH * 0.38, mouthR: shadeW * 0.15 };
 }
 
 function drawVase(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -314,7 +311,7 @@ function drawVase(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: 
   g.lineBetween(0, -s * 0.34, -s * 0.14, -s * 0.56);
   g.lineBetween(0, -s * 0.34, s * 0.12, -s * 0.6);
   gloss(g, -s * 0.16, -s * 0.02, s * 0.22, s * 0.34);
-  return { eyeY: s * 0.0, eyeGapX: s * 0.15, eyeR: s * 0.1, mouthY: s * 0.2, mouthR: s * 0.12, cheekY: s * 0.1, cheekGapX: s * 0.24, cheekR: s * 0.08 };
+  return { eyeY: s * 0.0, eyeGapX: s * 0.15, eyeR: s * 0.1, mouthY: s * 0.2, mouthR: s * 0.12 };
 }
 
 function drawPlate(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -329,7 +326,7 @@ function drawPlate(g: Phaser.GameObjects.Graphics, w: number, h: number, accent:
   g.fillStyle(hexToNum(accent), 0.35);
   g.fillEllipse(0, 0, s * 0.5, s * 0.22);
   gloss(g, -s * 0.28, -s * 0.12, s * 0.3, s * 0.12);
-  return { eyeY: -s * 0.02, eyeGapX: s * 0.14, eyeR: s * 0.09, mouthY: s * 0.12, mouthR: s * 0.12, cheekY: s * 0.06, cheekGapX: s * 0.22, cheekR: s * 0.06 };
+  return { eyeY: -s * 0.02, eyeGapX: s * 0.14, eyeR: s * 0.09, mouthY: s * 0.12, mouthR: s * 0.12 };
 }
 
 function drawFrame(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -349,7 +346,7 @@ function drawFrame(g: Phaser.GameObjects.Graphics, w: number, h: number, accent:
   g.fillStyle(hexToNum(COLORS.mustard), 0.9);
   g.fillCircle(0, ih * 0.02, iw * 0.22);
   gloss(g, -fw * 0.2, -fh * 0.3, fw * 0.3, fh * 0.2);
-  return { eyeY: ih * 0.02 - iw * 0.06, eyeGapX: iw * 0.09, eyeR: iw * 0.055, mouthY: ih * 0.02 + iw * 0.08, mouthR: iw * 0.09, cheekY: ih * 0.02 + iw * 0.01, cheekGapX: iw * 0.15, cheekR: iw * 0.05 };
+  return { eyeY: ih * 0.02 - iw * 0.06, eyeGapX: iw * 0.09, eyeR: iw * 0.055, mouthY: ih * 0.02 + iw * 0.08, mouthR: iw * 0.09 };
 }
 
 function drawClock(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
@@ -371,7 +368,7 @@ function drawClock(g: Phaser.GameObjects.Graphics, w: number, h: number, accent:
   g.lineBetween(0, r * 0.1, 0, -r * 0.1 - r * 0.28);
   g.lineBetween(0, r * 0.1, r * 0.2, r * 0.1 + r * 0.06);
   gloss(g, -r * 0.3, -r * 0.3, r * 0.5, r * 0.4);
-  return { eyeY: -r * 0.18, eyeGapX: r * 0.3, eyeR: r * 0.17, mouthY: r * 0.3, mouthR: r * 0.26, cheekY: r * 0.08, cheekGapX: r * 0.44, cheekR: r * 0.14 };
+  return { eyeY: -r * 0.18, eyeGapX: r * 0.3, eyeR: r * 0.17, mouthY: r * 0.3, mouthR: r * 0.26 };
 }
 
 const DRAWERS: Record<string, Drawer> = {
@@ -391,7 +388,7 @@ function drawFallback(g: Phaser.GameObjects.Graphics, w: number, h: number, acce
   shadowBase(g, w, h);
   gradientBody(g, accent);
   g.fillRoundedRect(-w * 0.35, -h * 0.35, w * 0.7, h * 0.7, 6);
-  return { eyeY: -h * 0.06, eyeGapX: w * 0.14, eyeR: h * 0.12, mouthY: h * 0.12, mouthR: w * 0.14, cheekY: h * 0.04, cheekGapX: w * 0.22, cheekR: h * 0.08 };
+  return { eyeY: -h * 0.06, eyeGapX: w * 0.14, eyeR: h * 0.12, mouthY: h * 0.12, mouthR: w * 0.14 };
 }
 
 export interface ItemVisual {

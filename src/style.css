@@ -19,16 +19,19 @@ body {
   padding: 0;
   width: 100%;
   height: 100%;
+  /* Oyun açılmadan önceki varsayılan -- ilk sahne create() çalışır çalışmaz syncBodyBackground()
+     bunu geçerli sahnenin degradesiyle değiştirir (bkz. scenes/bodyBackground.ts). */
   background: #2b2320;
   overflow: hidden;
 }
 
 #app {
+  /* Yalnızca Phaser'ın kendi Scale.CENTER_BOTH'u canvas'ı ortalar (inline margin ile) -- burada
+     AYRICA flex ortalama uygulamak iki ortalama sistemini üst üste bindirip canvas'ın gerçek
+     konumunu hesaplanandan farklı kılıyordu (oyun mantığı her zaman canlı getBoundingClientRect
+     okuduğu için oynanışı bozmuyordu, ama gereksiz bir tutarsızlıktı). */
   width: 100%;
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 canvas {

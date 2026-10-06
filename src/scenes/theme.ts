@@ -31,6 +31,26 @@ function clamp255(v: number): number {
 
 export const FONT_FAMILY = 'Fredoka, "Trebuchet MS", sans-serif';
 
+/**
+ * Tutarlı tipografi ölçeği (px) -- yeni metin eklerken en yakın basamağı seç (bkz. Faz 4 kararları).
+ * Her sahnedeki text() çağrıları bu basamaklardan birine denk gelir; ayrı bir sabit olarak
+ * dışa aktarılmaz (her satırda import etmeye değecek kadar sık değişmiyor) ama tasarım kararı
+ * burada belgelenir ki yeni eklenen metinler rastgele bir boyuta kaymasın:
+ *   28 -- ekran başlığı (ör. "Oturma Odası", "Ayarlar")
+ *   22 -- panel/diyalog başlığı (ör. "Seviye tamamlandı!")
+ *   17-19 -- ikincil başlık/rozet (ör. "Seviye N" hap etiketi, sonuç paneli rozeti)
+ *   14-15 -- HUD sayaçları (hamle, kalan eşya, oda sayacı, yıldız) -- her zaman fontStyle 600
+ *   12-13 -- gövde/açıklama metni, ikincil buton etiketleri
+ */
+export const TYPE_SCALE = {
+  screenTitle: 28,
+  panelTitle: 22,
+  sectionTitle: 18,
+  hudCounter: 15,
+  body: 13,
+  caption: 12,
+} as const;
+
 export const COLORS = {
   // Arkaplan varsayılanı: gerçek oyun/oda sahneleri ROOM_THEMES'i (tuning.ts) seviyeye göre
   // döndürerek kullanır; bu ikisi yalnızca tema almayan sahneler (ör. Ayarlar) için varsayılandır.

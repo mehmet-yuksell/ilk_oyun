@@ -10,7 +10,8 @@ import { getDebugLevelParam } from './debugLevelParam';
 import { colorForItemIndex } from './roomVisuals';
 import { drawRoomIcon, iconKeyForLabel, ICON_DEPTH, type RoomIconKey } from './roomItemArt';
 import { readSafeAreaInsets } from './safeArea';
-import { COLORS, hexToNum, shade } from './theme';
+import { syncBodyBackground } from './bodyBackground';
+import { COLORS, TYPE_SCALE, hexToNum, shade } from './theme';
 import { themeForLevel } from '../config/tuning';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { t } from '../i18n/translations';
@@ -101,7 +102,7 @@ export class RoomScene extends Phaser.Scene {
     this.add
       .text(this.scale.width / 2, this.safeTop + 30, this.room.name, {
         fontFamily: 'Fredoka, sans-serif',
-        fontSize: '28px',
+        fontSize: `${TYPE_SCALE.screenTitle}px`,
         fontStyle: '600',
         color: COLORS.ink,
       })
@@ -112,7 +113,7 @@ export class RoomScene extends Phaser.Scene {
         this.scale.width / 2,
         this.safeTop + 58,
         t('roomCounterLabel', this.lang, { current: this.saveData.currentRoomIndex + 1, total: ROOMS.length }),
-        { fontFamily: 'Fredoka, sans-serif', fontSize: '12px', color: COLORS.inkSoft },
+        { fontFamily: 'Fredoka, sans-serif', fontSize: `${TYPE_SCALE.hudCounter}px`, fontStyle: '600', color: COLORS.inkSoft },
       )
       .setOrigin(0.5);
 
@@ -215,6 +216,7 @@ export class RoomScene extends Phaser.Scene {
     const h = this.scale.height;
     const wallBottom = h * 0.68;
     const theme = themeForLevel(this.saveData.currentLevel);
+    syncBodyBackground(theme.bgTop, theme.bgBottom);
 
     const g = this.add.graphics();
     g.fillGradientStyle(hexToNum(theme.bgTop), hexToNum(theme.bgTop), shade(theme.bgTop, -0.08), shade(theme.bgTop, -0.08), 1, 1, 1, 1);
@@ -303,7 +305,7 @@ export class RoomScene extends Phaser.Scene {
     this.progressBarFill.setData('w', barW);
 
     this.progressLabel = this.add
-      .text(this.scale.width / 2, y + 20, '', { fontFamily: 'Fredoka, sans-serif', fontSize: '12px', color: COLORS.inkSoft })
+      .text(this.scale.width / 2, y + 20, '', { fontFamily: 'Fredoka, sans-serif', fontSize: `${TYPE_SCALE.body}px`, color: COLORS.inkSoft })
       .setOrigin(0.5);
   }
 

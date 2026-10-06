@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
-import { COLORS, hexToNum, shade } from './theme';
+import { COLORS, TYPE_SCALE, hexToNum, shade } from './theme';
 import { readSafeAreaInsets } from './safeArea';
+import { syncBodyBackground } from './bodyBackground';
 import { t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
 
@@ -28,7 +29,7 @@ export class SettingsScene extends Phaser.Scene {
     this.add
       .text(this.scale.width / 2, insets.top + 34, t('settingsTitle', lang), {
         fontFamily: FONT,
-        fontSize: '28px',
+        fontSize: `${TYPE_SCALE.screenTitle}px`,
         fontStyle: '600',
         color: COLORS.ink,
       })
@@ -57,6 +58,7 @@ export class SettingsScene extends Phaser.Scene {
   private drawBackground(): void {
     const w = this.scale.width;
     const h = this.scale.height;
+    syncBodyBackground(COLORS.bgTop, COLORS.bgBottom);
     const g = this.add.graphics();
     g.fillGradientStyle(hexToNum(COLORS.bgTop), hexToNum(COLORS.bgTop), shade(COLORS.bgBottom, 0.1), shade(COLORS.bgBottom, 0.1), 1, 1, 1, 1);
     g.fillRect(0, 0, w, h);

@@ -91,3 +91,49 @@ Kronolojik sırayla, en eski en üstte.
   tekrar oynatıldı (bkz. scripts/_get-certificate.ts, scripts/_win-shoot.cjs
   -- ikisi de gitignored, tek seferlik). Her iki panel 360x800 ve 412x915'te
   ekran görüntüsüyle kontrol edildi, taşma/kesilme yok.
+
+## Faz 4 — Görsel dilin sadeleştirilmesi
+
+- **20:9 siyah bantlar:** Phaser'ın Scale.FIT'i sabit 540x960 mantıksal çözünürlüğü korumak için
+  üstten/alttan letterbox bırakıyor (bu bantlar `<body>`nin arkaplanı). Bantları ekranı yeniden
+  tasarlayarak değil -- `document.body.style.background`'ı o anki sahnenin degradesiyle eşleyerek
+  (`scenes/bodyBackground.ts`, her sahnenin `drawBackground()`'ında çağrılır) giderdik. Sonuç:
+  360x800 (tam 20:9) gibi en uç oranda bile bant görünmüyor (ekran görüntüsüyle doğrulandı).
+  Ayrıca `#app`deki fazladan flex-ortalamayı kaldırdık (Phaser'ın kendi Scale.CENTER_BOTH'uyla
+  çakışıp canvas konumunu öngörülenden saptırıyordu -- oynanışı bozmuyordu ama gereksiz bir
+  tutarsızlıktı, bkz. önceki fazlardan kalma not).
+- **Renk paleti yumuşatıldı:** ROOM_THEMES'in 5 teması ve PALETTE'in 10 vurgu rengi (tuning.ts)
+  daha önceki fazda "neon" seviyesine çıkarılmıştı (ör. #1FE0C2, #C158FF, #F5D91A gibi saf uçlar);
+  şimdi hepsi aynı "yumuşatılmış mücevher tonu" diline (orta-yüksek doygunluk, aşırı uç YOK)
+  çekildi. roomVisuals.ts'teki mobilya paleti de aynı yönde güncellendi. Hiçbir test tam hex
+  değerine bağlı değildi (grep ile doğrulandı), bu yüzden serbestçe ayarlandı.
+- **Eşya yüzleri sadeleştirildi:** yanak allığı (blush) tamamen kaldırıldı -- en "çocuksu" okunan
+  öğeydi; gözler çift-katmanlı büyük anime-gözünden tek tonlu dolgu + tek küçük parıltıya indi;
+  ağız küçültüldü. `FaceSpec`ten artık kullanılmayan cheekY/cheekGapX/cheekR alanları silindi
+  (10 çizici fonksiyonun hepsinden). Ayrıca tutarlılık için drawTeddyBear'ın az farklı kontur
+  kalınlığı (1.4) diğerleriyle aynı varsayılana (1.6) çekildi.
+- **Kap (konteyner) görünümü:** "cam" hissi için üstte ince bir iç gölge şeridi + hemen altında
+  parlak bir "rim" çizgisi eklendi; dış çerçeve zaten amber/ahşap tonundaydı, korundu.
+- **Kilit rozeti BÜYÜK bir hata içeriyordu:** eski kod rozeti kabın üst-ORTASINA koyuyordu --
+  tam olarak en üstteki eşyanın durduğu yer, bu yüzden rozet neredeyse tamamen eşyanın ARKASINDA
+  gizleniyordu (yüksek çözünürlüklü ekran görüntüsüyle doğrulandı, bkz. _review-screenshots/
+  faz4/obstacle-level33-hires.png). Düzeltme: rozet üst-SOL köşeye taşındı (tip-lock rozetiyle
+  simetrik, üst-SAĞ köşede), büyütüldü (yarıçap ~15) ve gerçek bir asma kilit şekli (kavis+gövde+
+  anahtar deliği) olarak yeniden çizildi, her zaman okunur kalması için beyaz rozet zemini üstünde.
+  Tip-lock rozeti de aynı ölçeğe (yarıçap 9->11) büyütüldü.
+- **Gizemli eşya ("?"):** koyu mor-gri gövde yerine AÇIK bir degrade (daha az "ağır/koyu") + ince
+  noktalı çerçeve ("örtülü" hissi, ağırlık katmadan) + "?" artık kontrastlı koyu mürekkep renginde
+  (önceden koyu zeminde krem renkliydi).
+- **Animasyonlar kısaltıldı/yumuşatıldı** (tuning.ts: JUICE): move.duration 260->220, arcHeight
+  60->44; land squash 1.18/0.82 -> 1.1/0.9 (daha az "zıplama"), duration 160->140; completion
+  kamera titremesi 140ms/0.006 -> 110ms/0.004. Confetti parça sayısı 150->90 (reduced-motion:
+  36->28) -- "abartılı" bulunup azaltıldı.
+- **Tipografi ölçeği:** `theme.ts`'e `TYPE_SCALE` sabiti eklendi (screenTitle 28 / panelTitle 22 /
+  sectionTitle 18 / hudCounter 15 / body 13 / caption 12) ve en önemli 9 metin ögesine (ekran
+  başlıkları, panel başlıkları, seviye/oda rozetleri, HUD sayaçları, ipucu gövdesi) bağlandı --
+  üst bardaki "Hamle/Kalan eşya" 13->15px, "Oda N/10" 12->14px'e büyüdü. Dokunma hedefi (zone)
+  taraması yapıldı: GameScene/RoomScene/SettingsScene'deki TÜM `.zone()` çağrıları zaten >=48px
+  (bir önceki fazdan kalma iş) -- ek değişiklik gerekmedi.
+- Doğrulama: tsc temiz, 119/119 test yeşil, build başarılı. Playwright ile oda/oyun/ayarlar
+  ekranları + 5 oda teması (seviye 15/25/35/45) + 3 engelli seviye (12 gizemli, 31/33 kilitli)
+  + kazanma/kaybetme panelleri ekran görüntüsüyle incelendi.

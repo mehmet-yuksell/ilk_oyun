@@ -17,8 +17,9 @@ import { generateVerifiedLevel } from '../core/levelGenerator';
 import { computePar } from '../core/solver';
 import { accentFor, createItemVisual, strokeArc } from './itemVisuals';
 import { JUICE, DIFFICULTY, themeForLevel } from '../config/tuning';
-import { COLORS, RADIUS, SHADOW, hexToNum, shade } from './theme';
+import { COLORS, RADIUS, SHADOW, TYPE_SCALE, hexToNum, shade } from './theme';
 import { readSafeAreaInsets } from './safeArea';
+import { syncBodyBackground } from './bodyBackground';
 import { getDebugLevelParam } from './debugLevelParam';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { type HapticService, WebVibrationHapticService } from '../services/HapticService';
@@ -206,7 +207,7 @@ export class GameScene extends Phaser.Scene {
     const labelText = this.add
       .text(0, headerY, loaded.label, {
         fontFamily: 'Fredoka, sans-serif',
-        fontSize: '17px',
+        fontSize: `${TYPE_SCALE.sectionTitle}px`,
         fontStyle: '600',
         color: COLORS.ink,
         stroke: '#ffffff',
@@ -235,7 +236,8 @@ export class GameScene extends Phaser.Scene {
     this.statusSubText = this.add
       .text(this.scale.width / 2, headerY + 32, '', {
         fontFamily: 'Fredoka, sans-serif',
-        fontSize: '13px',
+        fontSize: `${TYPE_SCALE.hudCounter}px`,
+        fontStyle: '600',
         color: COLORS.inkSoft,
         stroke: '#ffffff',
         strokeThickness: 2,
@@ -245,7 +247,7 @@ export class GameScene extends Phaser.Scene {
     this.stuckBanner = this.add
       .text(this.scale.width / 2, headerY + 56, t('stuckBanner', this.lang), {
         fontFamily: 'Fredoka, sans-serif',
-        fontSize: '13px',
+        fontSize: `${TYPE_SCALE.body}px`,
         color: COLORS.cream,
         backgroundColor: COLORS.danger,
         padding: { x: 10, y: 6 },
@@ -374,6 +376,7 @@ export class GameScene extends Phaser.Scene {
     const h = this.scale.height;
     const wallBottom = h * 0.58;
     const theme = themeForLevel(this.levelNumber ?? 1);
+    syncBodyBackground(theme.bgTop, theme.bgBottom);
 
     const g = this.add.graphics();
     g.fillGradientStyle(hexToNum(theme.bgTop), hexToNum(theme.bgTop), shade(theme.bgTop, -0.08), shade(theme.bgTop, -0.08), 1, 1, 1, 1);
@@ -623,36 +626,57 @@ export class GameScene extends Phaser.Scene {
       );
       g.strokeRoundedRect(rx, ry, rw, rh, RADIUS.lg);
 
+      // iç gölge: camın en üstte hafifçe koyulaşması -- "içine bakılan bir kap" hissi.
+      g.fillStyle(SHADOW.color, 0.1);
+      g.fillRoundedRect(rx, ry, rw, Math.min(16, rh * 0.18), { tl: RADIUS.lg, tr: RADIUS.lg, bl: 0, br: 0 });
+      // cam rim parıltısı: üst kenarın hemen içinde ince bir parlak çizgi.
+      g.lineStyle(2, 0xffffff, 0.5);
+      g.lineBetween(rx + RADIUS.lg * 0.6, ry + 2, rx + rw - RADIUS.lg * 0.6, ry + 2);
+
       this.framesLayer.add(g);
 
       if (locked) {
-        this.framesLayer.add(this.createLockGlyph(layout.centerX, ry + 22));
+        // Üst-sol köşe: üst item her zaman kap merkezinde durduğu için köşe rozetleri hiçbir
+        // zaman eşyanın altında kalmaz (bkz. Faz 4 kararları -- eski merkez konum eşyanın
+        // arkasında neredeyse tamamen gizleniyordu).
+        this.framesLayer.add(this.createLockGlyph(rx + 18, ry + 18));
       }
       if (c.onlyAccepts) {
-        this.framesLayer.add(this.createTypeLockGlyph(rx + rw - 15, ry + 15, c.onlyAccepts));
+        this.framesLayer.add(this.createTypeLockGlyph(rx + rw - 18, ry + 18, c.onlyAccepts));
       }
     }
   }
 
+  /** Büyük, anlaşılır bir asma kilit rozeti: kavis (shackle) + gövde + anahtar deliği, her zaman
+   * okunur kalması için beyaz bir rozet zemini üzerinde (bkz. Faz 4 kararları -- eskisi çok küçük
+   * ve zemin olmadan düşük kontrastlıydı). */
   private createLockGlyph(x: number, y: number): Phaser.GameObjects.Graphics {
     const g = this.add.graphics({ x, y });
-    g.fillStyle(INK, 0.8);
-    g.lineStyle(3, INK, 0.8);
-    g.strokeCircle(0, -4, 6);
-    g.fillRoundedRect(-8, -2, 16, 12, 3);
+    g.fillStyle(hexToNum(COLORS.surface), 0.95);
+    g.fillCircle(0, 1, 15);
+    g.lineStyle(2, hexToNum(COLORS.inkSoft), 0.3);
+    g.strokeCircle(0, 1, 15);
+
+    g.lineStyle(3.2, INK, 0.85);
+    strokeArc(g, 0, -1, 6.5, 180, 360, 10);
+    g.fillStyle(INK, 0.85);
+    g.fillRoundedRect(-9, -2, 18, 15, 4);
+    g.fillStyle(hexToNum(COLORS.surface), 0.9);
+    g.fillCircle(0, 4, 2.2);
     return g;
   }
 
-  /** "Tek türlü kap" engelinin küçük renkli halka göstergesi -- o türün aksan rengiyle boyanır. */
+  /** "Tek türlü kap" engelinin renkli halka göstergesi -- o türün aksan rengiyle boyanır, lock
+   * rozetiyle aynı ölçekte (bkz. Faz 4 kararları: daha belirgin olsun diye büyütüldü). */
   private createTypeLockGlyph(x: number, y: number, acceptedType: string): Phaser.GameObjects.Graphics {
     const g = this.add.graphics({ x, y });
     const color = hexToNum(accentFor(acceptedType));
     g.fillStyle(hexToNum(COLORS.surface), 0.95);
-    g.fillCircle(0, 0, 9);
-    g.lineStyle(3, color, 1);
-    g.strokeCircle(0, 0, 9);
+    g.fillCircle(0, 0, 11);
+    g.lineStyle(3.2, color, 1);
+    g.strokeCircle(0, 0, 11);
     g.fillStyle(color, 1);
-    g.fillCircle(0, 0, 4);
+    g.fillCircle(0, 0, 5);
     return g;
   }
 
@@ -699,7 +723,7 @@ export class GameScene extends Phaser.Scene {
       this.add
         .text(0, 10, body, {
           fontFamily: 'Fredoka, sans-serif',
-          fontSize: '11px',
+          fontSize: `${TYPE_SCALE.caption}px`,
           color: COLORS.cream,
           align: 'center',
           wordWrap: { width: w - 32 },
@@ -972,7 +996,7 @@ export class GameScene extends Phaser.Scene {
       this.add
         .text(0, -panelH / 2 + 40, t(titleKey, this.lang), {
           fontFamily: 'Fredoka, sans-serif',
-          fontSize: '22px',
+          fontSize: `${TYPE_SCALE.panelTitle}px`,
           fontStyle: '600',
           color: COLORS.ink,
         })
@@ -1095,7 +1119,7 @@ export class GameScene extends Phaser.Scene {
       this.add
         .text(0, bannerY + 1, t('levelLostTitle', this.lang), {
           fontFamily: 'Fredoka, sans-serif',
-          fontSize: '19px',
+          fontSize: `${TYPE_SCALE.sectionTitle}px`,
           fontStyle: '600',
           color: COLORS.ink,
         })
@@ -1504,7 +1528,9 @@ export class GameScene extends Phaser.Scene {
     return container;
   }
 
-  /** "Gizemli eşya" engeli: kabın en üstünde olmayan eşyalar yüzü kapalı bir "?" olarak çizilir. */
+  /** "Gizemli eşya" engeli: kabın en üstünde olmayan eşyalar yüzü kapalı bir "?" olarak çizilir.
+   * Zarif/hafif bir "örtülü" his için AÇIK bir degrade + ince noktalı çerçeve kullanılır -- eski
+   * koyu/ağır gövde yerine (bkz. Faz 4 kararları). */
   private createMysteryVisual(x: number, y: number, w: number, h: number): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
     const g = this.add.graphics();
@@ -1513,22 +1539,33 @@ export class GameScene extends Phaser.Scene {
     const bodyW = w * 0.64;
     const bodyH = h * 0.64;
     g.fillGradientStyle(
-      shade(COLORS.inkSoft, 0.2),
-      shade(COLORS.inkSoft, 0.2),
-      shade(COLORS.inkSoft, -0.15),
-      shade(COLORS.inkSoft, -0.15),
+      shade(COLORS.inkSoft, 0.62),
+      shade(COLORS.inkSoft, 0.62),
+      shade(COLORS.inkSoft, 0.28),
+      shade(COLORS.inkSoft, 0.28),
       1,
       1,
       1,
       1,
     );
-    g.fillRoundedRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH, 8);
-    g.fillStyle(0xffffff, 0.3);
+    g.fillRoundedRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH, 10);
+    // noktalı çerçeve: "örtülü/kapalı" hissini ağırlaştırmadan veren ince bir detay.
+    g.fillStyle(hexToNum(COLORS.surface), 0.8);
+    const dotR = 1.4;
+    const inset = 7;
+    const dotsPerSide = 5;
+    for (let i = 0; i < dotsPerSide; i++) {
+      const t = i / (dotsPerSide - 1);
+      const ex = -bodyW / 2 + inset + t * (bodyW - inset * 2);
+      g.fillCircle(ex, -bodyH / 2 + inset, dotR);
+      g.fillCircle(ex, bodyH / 2 - inset, dotR);
+    }
+    g.fillStyle(0xffffff, 0.35);
     g.fillEllipse(-bodyW * 0.18, -bodyH * 0.26, bodyW * 0.3, bodyH * 0.2);
     container.add(g);
     container.add(
       this.add
-        .text(0, 0, '?', { fontFamily: 'Fredoka, sans-serif', fontSize: `${Math.round(bodyH * 0.6)}px`, fontStyle: '700', color: COLORS.cream })
+        .text(0, 0, '?', { fontFamily: 'Fredoka, sans-serif', fontSize: `${Math.round(bodyH * 0.6)}px`, fontStyle: '700', color: COLORS.ink })
         .setOrigin(0.5),
     );
     return container;

@@ -15,15 +15,16 @@ export interface RoomTheme {
 }
 
 /**
- * Her 10 seviyede bir sırayla değişen canlı, doygun degrade arkaplan temaları. Her iki durak da
- * (üst/alt) DOYGUN tutulur -- üstte soluk/pastel bir ton YOK, aksi halde arkaplan "soluk" okunur.
- */
+ * Her 10 seviyede bir sırayla değişen, dengeli-doygun degrade arkaplan temaları. Üst durak hâlâ
+ * pastel/soluk DEĞİL (bir önceki fazın dersi), ama alt durakla birlikte aşırı neon uçlardan
+ * (saf #RGB uçları) kaçınıp tek bir "yumuşatılmış mücevher tonu" diline oturacak şekilde
+ * dengelendi -- bkz. Faz 4 kararları (önceki tema seti "aşırı doygun/neon" bulundu). */
 export const ROOM_THEMES: readonly RoomTheme[] = [
-  { bgTop: '#FF8C4A', bgBottom: '#FF3B52' }, // doygun turuncu-şeftali -> doygun mercan-kırmızı
-  { bgTop: '#1FE0C2', bgBottom: '#1D6FE0' }, // doygun turkuaz -> doygun mavi
-  { bgTop: '#C158FF', bgBottom: '#FF2E95' }, // doygun mor -> doygun pembe
-  { bgTop: '#F5D91A', bgBottom: '#FF8A1C' }, // doygun limon -> doygun turuncu
-  { bgTop: '#2FE070', bgBottom: '#0FADA0' }, // doygun çimen yeşili -> doygun turkuaz-yeşil
+  { bgTop: '#F2905E', bgBottom: '#E6566D' }, // sıcak mercan gün batımı
+  { bgTop: '#4FB6C9', bgBottom: '#3E73C4' }, // yumuşak turkuaz -> okyanus mavisi
+  { bgTop: '#A877D6', bgBottom: '#D95C95' }, // lavanta -> böğürtlen pembesi
+  { bgTop: '#E8C24A', bgBottom: '#E2893F' }, // bal sarısı -> kehribar turuncu
+  { bgTop: '#52BD82', bgBottom: '#2F9C94' }, // ada çayı yeşili -> koyu turkuaz
 ] as const;
 
 /** Tema her THEME_CHANGE_EVERY_LEVELS seviyede bir döner (seviye 1-10 -> tema 0, 11-20 -> tema 1, ...). */
@@ -47,16 +48,16 @@ export const PALETTE = {
   surface: '#FFFFFF',
   surfaceMuted: '#E6DFEE',
 
-  coral: '#FF5A5F',
-  turquoise: '#1FD1C4',
-  mustard: '#FFD23F',
-  purple: '#8E5BFF',
-  green: '#3DDC84',
-  pink: '#FF6FB5',
-  sky: '#3BA7FF',
-  amber: '#FF9F1C',
-  maroon: '#D7263D',
-  navy: '#3A56D4',
+  coral: '#F2685F',
+  turquoise: '#2BB8AE',
+  mustard: '#F0BD3E',
+  purple: '#8463D6',
+  green: '#3DBE78',
+  pink: '#E8689F',
+  sky: '#3E93DB',
+  amber: '#EA9430',
+  maroon: '#C53349',
+  navy: '#3E52BD',
 
   gold: '#FFC94A',
   success: '#2FBE6B',
@@ -143,10 +144,11 @@ export const DIFFICULTY = {
 // ---------------------------------------------------------------------
 
 export const CONFETTI = {
-  /** Seviye tamamlanınca toplam parça sayısı (köşe topları + üst yağmur dahil). */
-  defaultParticleCount: 150,
+  /** Seviye tamamlanınca toplam parça sayısı (köşe topları + üst yağmur dahil) -- "abartılı"
+   * bulunup azaltıldı (bkz. Faz 4 kararları). */
+  defaultParticleCount: 90,
   /** prefers-reduced-motion açıkken kullanılan azaltılmış miktar. */
-  reducedMotionParticleCount: 36,
+  reducedMotionParticleCount: 28,
   shapes: ['rect', 'circle', 'star', 'ribbon'] as const,
   fallDurationMinMs: 1100,
   fallDurationMaxMs: 1900,
@@ -170,25 +172,26 @@ export const JUICE = {
     liftDistance: 10,
     duration: 120,
   },
-  /** Taşıma sırasında eşyaların kaynaktan hedefe yay çizerek gitmesi. */
+  /** Taşıma sırasında eşyaların kaynaktan hedefe yay çizerek gitmesi -- kısa/yumuşak olsun diye
+   * süre ve yay yüksekliği azaltıldı (bkz. Faz 4 kararları). */
   move: {
-    duration: 260,
-    arcHeight: 60,
+    duration: 220,
+    arcHeight: 44,
   },
-  /** Yerleşme anındaki squash & stretch sıçraması. */
+  /** Yerleşme anındaki squash & stretch sıçraması -- "aşırı zıplama" bulunup yumuşatıldı. */
   land: {
-    duration: 160,
-    squashScaleX: 1.18,
-    squashScaleY: 0.82,
+    duration: 140,
+    squashScaleX: 1.1,
+    squashScaleY: 0.9,
   },
-  /** Bir kap tamamlanınca: parçacık patlaması + kamera titremesi. */
+  /** Bir kap tamamlanınca: parçacık patlaması + kamera titremesi (daha ince). */
   completion: {
     particleCount: 10,
-    particleDuration: 420,
+    particleDuration: 380,
     particleSpeedMin: 60,
     particleSpeedMax: 140,
-    cameraShakeDuration: 140,
-    cameraShakeIntensity: 0.006,
+    cameraShakeDuration: 110,
+    cameraShakeIntensity: 0.004,
   },
   /** Geçersiz hamlede hedefin kırmızı flaşı. */
   invalid: {
