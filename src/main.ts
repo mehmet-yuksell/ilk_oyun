@@ -6,6 +6,7 @@ import { RoomScene } from './scenes/RoomScene';
 import { GameScene } from './scenes/GameScene';
 import { SettingsScene } from './scenes/SettingsScene';
 import { ConsoleAnalyticsService } from './services/AnalyticsService';
+import { restoreFromPreferencesIfMissing } from './services/SaveService';
 
 async function boot(): Promise<void> {
   // Fredoka, Phaser.Game oluşturulmadan ÖNCE yüklenmeli: Phaser Text nesneleri, oluşturuldukları
@@ -16,6 +17,10 @@ async function boot(): Promise<void> {
   } catch {
     // Font yüklenemezse (ör. eski tarayıcı) CSS zaten sans-serif yedeğine düşer.
   }
+
+  // İlk sahne (RoomScene) localStorage'ı SENKRON okuyacağı için, native Preferences'taki olası
+  // bir yedek varsa Phaser.Game oluşturulmadan ÖNCE localStorage'a kopyalanmalı (bkz. SaveService.ts).
+  await restoreFromPreferencesIfMissing(window.localStorage);
 
   const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,

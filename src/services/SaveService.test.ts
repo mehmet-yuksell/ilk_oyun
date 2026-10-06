@@ -1,6 +1,24 @@
-import { describe, expect, it } from 'vitest';
-import { createDefaultSaveData, InMemoryKeyValueStorage, LocalStorageSaveService, migrateSaveData, SAVE_DATA_VERSION } from './SaveService';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROOMS } from '../core/roomDefs';
+
+// @capacitor/preferences'ın registerPlugin() ile dönen nesnesi spyOn edilemiyor (own property
+// değil) -- modülü tamamen sahteleştiriyoruz, böylece get/set çağrılarını test başına kontrol
+// edebiliyoruz. vi.mock üstte (hoisted) olmalı, bu yüzden SaveService import'undan ÖNCE.
+const preferencesMock = {
+  get: vi.fn().mockResolvedValue({ value: null }),
+  set: vi.fn().mockResolvedValue(undefined),
+};
+vi.mock('@capacitor/preferences', () => ({ Preferences: preferencesMock }));
+
+const {
+  createDefaultSaveData,
+  InMemoryKeyValueStorage,
+  LocalStorageSaveService,
+  migrateSaveData,
+  restoreFromPreferencesIfMissing,
+  SAVE_DATA_VERSION,
+  STORAGE_KEY,
+} = await import('./SaveService');
 
 describe('createDefaultSaveData', () => {
   it('yeni oyuncu için makul varsayılanlar üretir', () => {
@@ -98,5 +116,78 @@ describe('migrateSaveData', () => {
   it('rooms hiç array değilse (bozuk veri) tamamen taze bir rooms listesi üretir', () => {
     const migrated = migrateSaveData({ version: 1, rooms: 'not-an-array' });
     expect(migrated.rooms).toEqual(createDefaultSaveData().rooms);
+  });
+});
+
+describe('LocalStorageSaveService + @capacitor/preferences', () => {
+  beforeEach(() => {
+    preferencesMock.get.mockReset();
+    preferencesMock.set.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('save() localStorage ile birlikte Preferences\'a da (aynı anahtarla) yazar', async () => {
+    const storage = new InMemoryKeyValueStorage();
+    const service = new LocalStorageSaveService(storage);
+    const data = { ...createDefaultSaveData(), stars: 55 };
+
+    service.save(data);
+
+    expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(data));
+    // Preferences yazısı fire-and-forget (await edilmiyor) -- mikro görev kuyruğunun
+    // boşalmasını bekleyip çağrıldığını doğruluyoruz.
+    await Promise.resolve();
+    expect(preferencesMock.set).toHaveBeenCalledWith({ key: STORAGE_KEY, value: JSON.stringify(data) });
+  });
+
+  it('Preferences.set reddedilse bile save() hata fırlatmaz (localStorage zaten birincil kaynak)', () => {
+    preferencesMock.set.mockReset().mockRejectedValue(new Error('eklenti yok'));
+    const storage = new InMemoryKeyValueStorage();
+    const service = new LocalStorageSaveService(storage);
+
+    expect(() => service.save(createDefaultSaveData())).not.toThrow();
+  });
+});
+
+describe('restoreFromPreferencesIfMissing', () => {
+  beforeEach(() => {
+    preferencesMock.get.mockReset();
+    preferencesMock.set.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('localStorage zaten doluysa Preferences\'a hiç bakmaz', async () => {
+    const storage = new InMemoryKeyValueStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify({ stars: 1 }));
+
+    await restoreFromPreferencesIfMissing(storage);
+
+    expect(preferencesMock.get).not.toHaveBeenCalled();
+    expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify({ stars: 1 }));
+  });
+
+  it('localStorage boşsa ve Preferences\'ta bir yedek varsa, onu localStorage\'a geri yazar', async () => {
+    const backup = JSON.stringify({ ...createDefaultSaveData(), stars: 77 });
+    preferencesMock.get.mockResolvedValue({ value: backup });
+    const storage = new InMemoryKeyValueStorage();
+
+    await restoreFromPreferencesIfMissing(storage);
+
+    expect(storage.getItem(STORAGE_KEY)).toBe(backup);
+  });
+
+  it('localStorage boş ve Preferences\'ta da yedek yoksa localStorage boş kalır', async () => {
+    preferencesMock.get.mockResolvedValue({ value: null });
+    const storage = new InMemoryKeyValueStorage();
+
+    await restoreFromPreferencesIfMissing(storage);
+
+    expect(storage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('Preferences.get reddedilirse sessizce vazgeçer, hata fırlatmaz', async () => {
+    preferencesMock.get.mockRejectedValue(new Error('eklenti yok'));
+    const storage = new InMemoryKeyValueStorage();
+
+    await expect(restoreFromPreferencesIfMissing(storage)).resolves.toBeUndefined();
+    expect(storage.getItem(STORAGE_KEY)).toBeNull();
   });
 });

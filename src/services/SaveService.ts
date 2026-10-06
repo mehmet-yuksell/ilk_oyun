@@ -1,3 +1,4 @@
+import { Preferences } from '@capacitor/preferences';
 import type { DailyRewardState } from '../core/dailyReward';
 import type { RoomProgress } from '../core/room';
 import { createInitialRoomProgress } from '../core/room';
@@ -85,8 +86,18 @@ export interface KeyValueStorage {
   setItem(key: string, value: string): void;
 }
 
-const STORAGE_KEY = 'yerli-yerinde-save-v1';
+export const STORAGE_KEY = 'yerli-yerinde-save-v1';
 
+/**
+ * localStorage'a EK OLARAK @capacitor/preferences'a da (en-son-durumu) yazar -- native
+ * platformlarda (Android) verinin yalnızca WebView depolamasına değil, native
+ * SharedPreferences'a da yedeklenmesi için (ör. WebView depolaması farklı bir nedenle
+ * temizlenirse kurtarılabilsin diye, bkz. restoreFromPreferencesIfMissing). load()/save()
+ * imzası SENKRON kalır (oyun kodunun onlarca yerinde böyle kullanılıyor) -- bu yüzden
+ * Preferences yazısı "fire-and-forget" (ateşle-unut), hiçbir çağrı yerini async yapmaz.
+ * Web'de @capacitor/preferences zaten kendi içinde localStorage'a düşer, bu yüzden web'de bu
+ * sadece zararsız bir ikinci (ayrı anahtarlı) yazıdır.
+ */
 export class LocalStorageSaveService implements SaveService {
   private readonly storage: KeyValueStorage;
   private readonly key: string;
@@ -107,7 +118,31 @@ export class LocalStorageSaveService implements SaveService {
   }
 
   save(data: SaveData): void {
-    this.storage.setItem(this.key, JSON.stringify(data));
+    const json = JSON.stringify(data);
+    this.storage.setItem(this.key, json);
+    void Preferences.set({ key: this.key, value: json }).catch(() => {
+      // Eklenti kullanılamıyorsa (ör. tarayıcıda bazı kısıtlı ortamlar) sessizce yok say --
+      // localStorage yazısı zaten yapıldı, oyunun birincil kayıt yolu bozulmaz.
+    });
+  }
+}
+
+/**
+ * Uygulama açılışında BİR KERE (bkz. main.ts) çağrılır: localStorage'ta hiç kayıt yoksa ama
+ * native Preferences'ta bir yedek varsa (ör. WebView depolaması farklı bir nedenle temizlenmiş
+ * olabilir), onu localStorage'a geri yazar -- böylece LocalStorageSaveService.load() (senkron)
+ * normal şekilde bulur. localStorage'ta zaten veri varsa hiçbir şey yapmaz (localStorage her
+ * zaman üstün kaynaktır, Preferences yalnızca bir yedektir). Web'de @capacitor/preferences
+ * kendi içinde zaten localStorage kullandığından burada pratikte hep "localStorage zaten dolu"
+ * koluna düşer -- yalnızca gerçek native platformlarda anlamlı bir fark yaratır.
+ */
+export async function restoreFromPreferencesIfMissing(storage: KeyValueStorage, key: string = STORAGE_KEY): Promise<void> {
+  if (storage.getItem(key)) return;
+  try {
+    const { value } = await Preferences.get({ key });
+    if (value) storage.setItem(key, value);
+  } catch {
+    // Eklenti kullanılamıyorsa sessizce atla -- createDefaultSaveData() ile devam edilir.
   }
 }
 

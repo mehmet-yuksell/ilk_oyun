@@ -26,6 +26,7 @@
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.2",
+    "@capacitor/preferences": "^8.0.1",
     "phaser": "^3.90.0"
   }
 }

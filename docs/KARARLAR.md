@@ -219,3 +219,33 @@ Kronolojik sırayla, en eski en üstte.
   oynanışta öğretici elin göründüğü, ikinci oynanışta görünmediği ekran görüntüleriyle
   kanıtlandı; (b) gerçek seviye verisiyle yeni hamle payı tablosu (seviye 1/10/15/16/25/40/
   41/60/100) hesaplanıp kademeli daralma doğrulandı.
+
+## Faz 7 — Teknik sağlamlaştırma
+
+**Not:** Faz 7 kapsamı çok büyük (ses + depolama + arka plan/geri tuşu + GameScene bölünmesi +
+Android yapılandırması + paket boyutu) -- riski azaltmak için her alt-parça kendi içinde
+test/build doğrulamasından geçtikçe ayrı commit'lere bölündü (tek dev commit yerine), ama hepsi
+bu "Faz 7" başlığı altında, aşağıda sırayla belgeleniyor.
+
+- **Ses tasarımı yenilendi** (SoundService.ts): çıplak osilatör "bip"leri yerine her ses artık
+  osilatör -> BiquadFilter -> gain zinciri kullanıyor. tap/land: üçgen dalga + alçak geçiren
+  filtre + hafif aşağı perde kayması ("ahşap tıkırtısı" hissi). complete: iki sinüs notası +
+  bant geçiren filtre, kısa bir gecikmeyle art arda ("cam çınlaması", "ding-ding"). invalid:
+  düşük frekans + dar alçak geçiren filtre (eski keskin kare-dalga yerine donuk/rahatsız
+  etmeyen bir uyarı). Harici ses dosyası yok, tamamen Web Audio API ile üretiliyor. Mevcut
+  testin sahte AudioContext'i `createBiquadFilter`i de içerecek şekilde genişletildi (yeni
+  davranış için 2 yeni test eklendi, mevcut test zayıflatılmadı).
+- **@capacitor/preferences eklendi** (yeni bağımlılık). `SaveService` API'si (load/save) BİLEREK
+  senkron kaldı -- oyun kodunun onlarca yerinde senkron kullanılıyor, tamamını async'e çevirmek
+  bu fazın kapsamına göre orantısız bir risk olurdu. Bunun yerine: `save()` artık localStorage'a
+  YAZDIKTAN SONRA Preferences'a da (aynı anahtarla) "ateşle-unut" (fire-and-forget, await
+  edilmeyen, hata yutan) bir yedek yazıyor -- native Android'de SharedPreferences'a da gider.
+  Yeni `restoreFromPreferencesIfMissing()` fonksiyonu uygulama açılışında (main.ts, Phaser.Game
+  oluşturulmadan ÖNCE, tek seferlik `await`) localStorage boşsa Preferences'taki olası bir
+  yedeği geri yazar. Web'de @capacitor/preferences zaten kendi içinde localStorage kullandığı
+  için bu pratikte zararsız bir ikinci (ayrı anahtarlı) yazıdır -- davranış değişmez.
+  `vi.spyOn` Capacitor'ın registerPlugin() nesnesinde çalışmadığından (own property değil)
+  testler `vi.mock('@capacitor/preferences', ...)` ile tam modül sahteleştirmesine geçti.
+  6 yeni test eklendi (save+Preferences yazısı, hata toleransı, restore senaryoları).
+  Doğrulama: Playwright ile gerçek bir "günlük ödül al" + sayfa yenileme döngüsünde yıldızların
+  doğru kalıcı olduğu kanıtlandı (0 konsol hatası).
