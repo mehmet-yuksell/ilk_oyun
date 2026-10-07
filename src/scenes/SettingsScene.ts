@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
-import { COLORS, TYPE_SCALE, hexToNum, shade } from './theme';
+import { COLORS, RADIUS, TYPE_SCALE, hexToNum, shade } from './theme';
 import { readSafeAreaInsets } from './safeArea';
 import { syncBodyBackground } from './bodyBackground';
 import { t } from '../i18n/translations';
@@ -35,17 +35,33 @@ export class SettingsScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    let y = insets.top + 90;
+    // Satırları saran beyaz, yuvarlak köşeli bir kart -- önceki sürümde satırlar çıplak
+    // degradenin üzerinde yüzüyordu ve altında büyük, "bitmemiş" hissi veren boş bir alan
+    // kalıyordu (bkz. Faz 8 kararları). Kart hem görsel yapı katıyor hem de "Kapat" butonunu
+    // ekranın en altına sabitlemek yerine içeriğin hemen altına taşımayı mümkün kılıyor.
+    const rowsTop = insets.top + 90;
+    const cardX = this.scale.width / 2 - (ROW_WIDTH + 40) / 2;
+    const cardY = rowsTop - 30;
+    const cardW = ROW_WIDTH + 40;
+    const cardH = 172;
+    const card = this.add.graphics();
+    card.fillStyle(hexToNum(COLORS.surface), 0.92);
+    card.fillRoundedRect(cardX, cardY, cardW, cardH, RADIUS.lg);
+    card.lineStyle(2, hexToNum(COLORS.coral), 0.35);
+    card.strokeRoundedRect(cardX, cardY, cardW, cardH, RADIUS.lg);
+
+    let y = rowsTop;
     y = this.addLanguageRow(y, lang);
     y = this.addToggleRow(y, t('soundLabel', lang), this.saveData.soundEnabled, (value) => {
       this.saveData = { ...this.saveData, soundEnabled: value };
       this.persistAndRefresh();
     });
-    y = this.addToggleRow(y, t('hapticLabel', lang), this.saveData.hapticEnabled, (value) => {
+    this.addToggleRow(y, t('hapticLabel', lang), this.saveData.hapticEnabled, (value) => {
       this.saveData = { ...this.saveData, hapticEnabled: value };
       this.persistAndRefresh();
     });
-    this.createButton(this.scale.width / 2, this.scale.height - insets.bottom - 36, t('closeButton', lang), () => {
+
+    this.createButton(this.scale.width / 2, cardY + cardH + 56, t('closeButton', lang), () => {
       this.scene.start('RoomScene');
     });
   }

@@ -328,3 +328,74 @@ bu "Faz 7" başlığı altında, aşağıda sırayla belgeleniyor.
   motoru çalışma zamanında zaten devreye girmiyor) -- yalnızca paket BOYUTU etkilenmiyor.
   Doğrulama: tsc temiz, 133/133 test yeşil, `npm run build` + `npm run preview` ile gerçek
   üretim paketi Playwright'ta sıfır konsol hatasıyla çalıştırıldı.
+
+## Faz 8 — Son kontrol
+
+- `npm test` (133/133), `npm run build` ve `npx cap sync android` (3 Capacitor eklentisi:
+  app/preferences + android çekirdeği doğru kaydedildi) hatasız çalıştı.
+- Son grep kontrolü: `reklam|removeads|adservice` (src) ve admob/unity-ads/applovin/ironsource
+  (android build dosyaları) için 0 gerçek eşleşme -- kalan tüm "ad" eşleşmeleri ya "reklam yok"
+  açıklama yorumları, ya migrasyon testindeki kasıtlı eski-alan referansları, ya da "adım"
+  (step) gibi alakasız Türkçe kelimelerdi.
+- **Ayarlar ekranı küçük bir cilalama aldı:** satırların altında büyük, "bitmemiş" hissi veren
+  boş bir alan vardı (overflow/kesilme değil ama profesyonellik açısından zayıftı) -- satırlar artık
+  beyaz, yuvarlak köşeli bir kartta gruplanıyor, "Kapat" butonu kartın hemen altına taşındı. Bu
+  aynı zamanda metin kontrastını da iyileştirdi (koyu mürekkep artık beyaz kart üzerinde, çıplak
+  degrade yerine).
+- **Önemli test-araçları notu (ÜRÜN HATASI DEĞİL):** 360x800/412x915'te tüm ana ekranları
+  otomatik Playwright ile tararken, sahne geçişlerinin hemen ardından (oda->oyun fade'i
+  sırasında/sonrasında) alınan bazı ekran görüntüleri BEKLENMEDİK şekilde koyu/donuk çıktı.
+  Araştırma (zaman serisi ekran görüntüleri + aynı betiği arka arkaya 3 kez çalıştırma) şunu
+  kanıtladı: bu, headless Chromium'da `page.screenshot()`'ın kendisinin neden olduğu bir "GPU
+  stall due to ReadPixels" (konsolda görüldü) sonucu Phaser'ın 220ms'lik kamera fade-in tween'inin
+  rastgele bir anında donuk görüntü yakalanmasıydı -- AYNI betiğin AYNI sunucuya karşı arka arkaya
+  çalıştırılması bazen parlak bazen donuk sonuç verdi (deterministik değil, ürün kodunda hiçbir
+  değişiklik yapılmadan). Gerçek bir oyuncu bunu asla görmez (220ms'lik geçiş normal oynanışta
+  sorunsuz tamamlanır, yalnızca otomatik çerçeve-dondurma bunu yakalayabiliyor). Düzeltme: resmi
+  teslim ekran görüntüleri için bekleme süreleri cömertleştirildi (tıklamadan sonra 2.5-3sn) ve
+  her biri tek tek gözle doğrulandı -- tüm 12 ekran görüntüsü (oda/ayarlar/oyun/engelli
+  seviye/kazanma/kaybetme x 2 boyut) artık doğru ve parlak.
+- Metin taşması, kesilme veya düşük kontrast bulunmadı (ayarlar hariç, yukarıda düzeltildi).
+
+### Özet: bu oturumda yapılanlar
+
+- **Faz 0-1:** Uygulama "Cozy Sort" olarak yeniden markalandı (appId korundu); reklam/IAP
+  katmanı (AdService, mock reklam akışları, "Reklamları Kaldır") tamamen kaldırıldı, ücretsiz
+  ekonomiye geçildi (sınırlı Ekstra Kap hakkı, tam yıldız ödülü, tek dokunuşlu günlük ödül).
+- **Faz 2:** Debug/geliştirici izleri (par/limit metni, konsol logları) doğrulandı -- zaten
+  yalnızca `?level=N` debug modunda görünüyorlardı; `console.log` artık yalnızca DEV modunda.
+- **Faz 3:** Kazanma/kaybetme panelleri yeniden tasarlandı -- kaybetme panelindeki taşma hatası
+  düzeltildi, ton yumuşatıldı ("Hamle Hakkın Bitti"), "Odaya Dön" gerçek bir ikincil buton oldu.
+- **Faz 4:** Görsel dil sadeleştirildi -- 20:9 siyah bantlar giderildi, renk paleti
+  yumuşatıldı (neon->mücevher tonu), eşya yüzleri sadeleştirildi, kilit/tip-lock rozetleri
+  büyütülüp düzeltildi (BİR GERÇEK HATA: rozet eşyanın arkasında gizleniyordu), animasyonlar
+  kısaltıldı, tipografi ölçeği tutarlı hale getirildi.
+- **Faz 5:** Oda ekranı iyileştirildi -- yenilenmemiş eşyalar koyu siluet oldu, yenileme
+  animasyonu güçlendirildi, splash ekranı + yumuşak sahne geçişleri eklendi, oda tamamlama
+  "toast"tan gerçek bir kutlama paneline dönüştü. BİR GERÇEK HATA: eski kayıtlardaki kısa
+  `rooms` dizisi RoomScene'i çökertiyordu, migrasyon düzeltildi.
+- **Faz 6:** Öğretici artık gerçekten bir kere gösteriliyor (seenHints); ilk 15 seviyede hamle
+  limiti daha rahat, sonra kademeli daralıyor.
+- **Faz 7 (en büyük faz):** doğal (filtreli) ses tasarımı; @capacitor/preferences ile yedekli
+  kayıt; arka plan/geri tuşu davranışı doğrulandı; GameScene.ts 1709->1011 satıra indi (698
+  satır 6 modüle taşındı); Android sürüm/minify/imzalama belgelendi; paket boyutu ölçüldü
+  (Phaser >%92, kendi kodumuz ~97KB).
+- **Faz 8:** son doğrulama, ayarlar ekranı cilalandı, bu özet.
+
+### Kalan riskler / önerilen sonraki adımlar
+
+1. **Android native build hiç çalıştırılamadı** (bu ortamda Android SDK/Gradle/JDK yok).
+   `minifyEnabled true` sonrası `./gradlew assembleRelease` gerçek bir cihazda/emülatörde MUTLAKA
+   test edilmeli -- proguard'ın bir şeyi yanlışlıkla kırması düşük ama sıfır olmayan bir ihtimal
+   (bkz. docs/YAYIN.md, geri alma adımı dahil).
+2. **Android donanım geri tuşu** gerçek bir native ortamda hiç tetiklenemedi (web-only test
+   ortamı) -- kod incelemesiyle ve aynı kod yolunu kullanan uygulama-içi "Geri" butonuyla dolaylı
+   doğrulandı, ama gerçek cihazda elle bir kez denenmesi önerilir.
+3. **Phaser paketi küçültülemedi** (kütüphanenin kendi mimari kısıtı, yukarıda açıklandı) --
+   ~319KB gzip ilk yükleme her zaman kalacak; tek gerçekçi iyileştirme zaten yapılan
+   vendor-chunk önbellekleme ayrımıydı.
+4. **İmzalama anahtarı (keystore) henüz yok** -- ilk gerçek Play Store yüklemesinden önce
+   docs/YAYIN.md'deki adımlarla elle oluşturulmalı (bilerek bu oturumda yapılmadı).
+5. Bu görev boyunca kullanılan tüm Playwright betikleri (`scripts/_*.cjs`) ve ekran görüntüleri
+   (`_review-screenshots/`) gitignored ve tek seferlik -- repoyu temiz tutmak için silinebilir,
+   hiçbiri üretim koduna dahil değil.
