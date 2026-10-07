@@ -296,4 +296,35 @@ bu "Faz 7" başlığı altında, aşağıda sırayla belgeleniyor.
   (üretilen seviyenin gerçek çözüm sertifikası tekrar oynatılarak -- animateMove/attemptMove
   zincirini ve paneli test eder), öğreticinin ilk oynanışta görünüp ikincide görünmediği, ve
   kilitli kap rozetinin hâlâ doğru çizildiği ekran görüntüleriyle kanıtlandı. Hepsi bölünmeden
-  ÖNCEKİyle piksel-piksel aynı sonuçları verdi.
+  önceki haliyle piksel-piksel aynı sonuçları verdi.
+
+- **Android sürüm/imzalama/minify:** `versionCode` 1->2, `versionName` "1.0"->"1.1.0" (bkz.
+  docs/YAYIN.md -- her Play Store yüklemesinde ikisi de artırılmalı). Release build artık
+  `minifyEnabled true` + `shrinkResources true` kullanıyor; Capacitor'ın kendi kütüphane
+  modüllerinin (capacitor-android, @capacitor/app, @capacitor/preferences) consumer-proguard
+  kuralları otomatik birleştiği için elle keep kuralı eklemeye gerek kalmadı ("güvenli açılış").
+  **Keystore OLUŞTURULMADI** (görev böyle istedi) -- imzalama adımları, versionCode/versionName
+  yönetimi ve bir release öncesi yapılması gereken elle doğrulama (`./gradlew assembleRelease`
+  + gerçek cihazda test, bu ortamda Android SDK olmadığı için YAPILAMADI) docs/YAYIN.md'ye
+  yazıldı. `npx cap sync android` çalıştırılıp @capacitor/preferences'ın native modül olarak
+  doğru kaydedildiği doğrulandı (capacitor.build.gradle/capacitor.settings.gradle otomatik
+  güncellendi, commit'e dahil edildi).
+
+- **Üretim paket boyutu ölçüldü:** `vite.config.ts` eklenerek Phaser ayrı bir "vendor" parçasına
+  bölündü (Rolldown -- bu projenin bundler'ı -- klasik Rollup'ın nesne kısayolunu değil
+  fonksiyon bekliyor, ilk deneme bir çalışma zamanı hatası verdi, düzeltildi). Sonuç kesin
+  olarak şunu gösterdi: **`phaser-*.js` 1196.90 KB ham / 318.74 KB gzip, kendi oyun kodumuz
+  (`index-*.js`) yalnızca 96.97 KB ham / 30.64 KB gzip.** Yani ~1.3MB'lık paketin >%92'si Phaser
+  kütüphanesinin kendisi -- kendi kodumuz zaten küçük. Toplam indirilen bayt bölünmeyle
+  değişmedi (beklenen; bu bir küçültme değil, bir önbellekleme iyileştirmesi) ama artık Phaser
+  (biz güncellemediğimiz sürece hiç değişmeyen) ayrı bir parça olduğu için sonraki deploy'larda
+  dönen kullanıcılar yalnızca küçük uygulama parçasını yeniden indirir.
+  **Phaser'ı daha fazla küçültme (ör. kullanılmayan Matter.js fizik motorunu atma) resmi
+  npm/Vite araçlarıyla MÜMKÜN DEĞİL** -- Phaser bunu package.json `exports` üzerinden ayrı bir
+  "lite" girdi noktası olarak sunmuyor, yalnızca topluluk tarafından Phaser'ı kaynağından özel
+  bir webpack yapılandırmasıyla yeniden derleyerek yapılabiliyor; bu, Phaser sürüm
+  güncellemelerinde kırılgan, desteksiz bir hack olacağından denenmedi (risk/fayda oranı kötü).
+  Oyun zaten `main.ts`'teki Phaser.Game config'inde `physics` anahtarını hiç kullanmıyor (fizik
+  motoru çalışma zamanında zaten devreye girmiyor) -- yalnızca paket BOYUTU etkilenmiyor.
+  Doğrulama: tsc temiz, 133/133 test yeşil, `npm run build` + `npm run preview` ile gerçek
+  üretim paketi Playwright'ta sıfır konsol hatasıyla çalıştırıldı.

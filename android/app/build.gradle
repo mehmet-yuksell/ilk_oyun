@@ -7,8 +7,11 @@ android {
         applicationId "com.yerliyerinde.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Her Play Store yüklemesinde versionCode artmalı (negatif değil, her zaman öncekinden
+        // büyük bir tam sayı); versionName kullanıcıya görünen sürüm metnidir. Bu "Cozy Sort"
+        // profesyonelleştirme geçişiyle 1.1.0'a çıkarıldı (bkz. docs/YAYIN.md).
+        versionCode 2
+        versionName "1.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -18,8 +21,15 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Capacitor'ın kendi kütüphane modülleri (capacitor-android, @capacitor/app,
+            // @capacitor/preferences) kendi "consumer proguard" kurallarını AAR'larıyla
+            // birlikte taşır -- bu kurallar Gradle tarafından otomatik birleştirilir, bu yüzden
+            // eklenti köprüsü (JS<->native reflection) için elle keep kuralı yazmaya gerek
+            // yoktur ("güvenli" açılış budur). proguard-rules.pro bilerek varsayılan/boş
+            // bırakıldı -- özel bir native kod yok.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
