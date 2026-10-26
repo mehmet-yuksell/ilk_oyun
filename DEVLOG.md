@@ -155,3 +155,34 @@ kapanınca Phaser tween'leri ve nesneleri otomatik temizliyor. Arka plan dokular
 - Kap çerçevesi seçilince hareket etmiyor (yalnızca hale): çerçeve kalkarsa raftaki eşyalarla hizası bozuluyordu.
 - "×N" rozeti kaldırıldı: eşyalar tek tek uçtuğu için sayı zaten görülüyor.
 - `JUICE` ayarları güncellendi: kalkma 10→16 px / 200 ms, uçuş 300 ms + 55 ms aralık, iniş ezilmesi 1.14/0.86, 260 ms.
+
+---
+
+## FAZ 3 — Geri bildirim ve "juice"
+
+**Yapılanlar**
+- **Doğru hamle**: inişte küçük ışıltı patlaması (Phaser ParticleEmitter — dahili havuz, `scenes/fx.ts`).
+- **Grup tamamlama**: 4 eşya bir an geri belirip heyecanlı yüzle zıplar → ışıltıya dönüşür; renkli nokta + ışıltı
+  patlaması; altın yıldızlar yay çizip HUD yıldızına uçar (varınca HUD yıldızı "pop"); kap çerçevesi hafif büyüyüp
+  `Back.Out` ile oturur; **çok hafif zoom vuruşu** (%1.2, mantıksal merkez sabit) + mini titreşim (eski şiddetin %60'ı).
+- **Geçersiz hamle**: sert kırmızı çerçeve flaşı kaldırıldı → hedef kap + eşyaları sönümlenen kısa bir yatay
+  "hayır" sallanması (2.5 salınım, 7 px → 0). "Hamle kalmadı" bandı kırmızı zeminden sakin koyu erik hapa döndü.
+- **Combo**: düz metin yerine Back.Out ile açılan terrakota hap; kenardaki kaplarda ekran içine kaydırılıyor.
+- **Kazanma paneli** (`gamePanels.ts`): derecelendirmeye göre kurdele başlık (Mükemmel! / Harika! / Tamamlandı!),
+  arkada yavaş dönen sıcak ışınlar, 3 yıldız yay dizilimi (ortadaki büyük) — dolu olanlar sırayla dönerek
+  `Back.Out` ile oturur ve ışıltı patlatır; +N sayaç artışı + bitişte pop; eski boş alan yerine Hamle/Süre çipleri;
+  "Sonraki Seviye" belirince nabız atar. Panel aşağıdan yükselerek girer, kararma tüm ekranı örter ve alttaki
+  oyuna dokunuşları yutar. Son grup kutlaması görülsün diye panel 700 ms gecikmeli.
+- **Kaybetme paneli**: aynı dil, bal rengi kurdele, nabızlı "Tekrar Dene", çerçeveli "Odaya Dön".
+- **Butonlar** (`scenes/ui.ts`): pişmiş degrade yüz + 3B dudak + yumuşak gölge; basınca küçülüp dudağa iner,
+  bırakınca `Back.Out`; parmak dışarı kayarsa iptal; dokunma alanı ≥ 48 px. (Faz 5'te tüm ekranlara yayılacak.)
+- **Haptik**: `@capacitor/haptics@8` eklendi. `createHapticService()`: native'de Capacitor Haptics (impact light/medium,
+  notification success/warning), web'de sessiz Noop. Hızlı art arda hafif darbeler 35 ms'de bire seyreltiliyor
+  (bildirimler asla atlanmaz). Ayarlar'daki "Titreşim" anahtarı (mevcut `hapticEnabled`) kapatıyor. +4 test.
+
+**Bellek denetimi** (seviye 120, 25 döngü): görüntü listesi 30→30, tween 33→33, doku 48→49 (ilk kez kullanılan
+efekt dokusu, sonra sabit).
+
+**Kararlar**
+- Web'de titreşim tamamen kapalı (istek: "web'de sessizce atla") — eski `navigator.vibrate` sınıfı testler için duruyor ama varsayılan değil.
+- Yıldız sesi için şimdilik "complete" sesi kullanılıyor; Faz 4'te ayrı yıldız sesi gelecek.

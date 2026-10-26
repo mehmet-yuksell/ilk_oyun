@@ -18,22 +18,23 @@ import { computePar } from '../core/solver';
 import { MYSTERY_TYPE, createItemVisual, resetItemVisual } from './itemVisuals';
 import { ContainerView } from './containerView';
 import { JUICE, DIFFICULTY, themeForLevel } from '../config/tuning';
-import { COLORS, FONT_FAMILY, TYPE_SCALE, hexToNum } from './theme';
+import { COLORS, EASE, FONT_FAMILY, TYPE_SCALE, hexToNum, textStyle } from './theme';
 import { BASE_HEIGHT, BASE_WIDTH, setupView, toWorld, type View } from './viewport';
 import { drawCozyBackground } from './background';
 import { readSafeAreaInsets } from './safeArea';
 import { fadeToScene } from './sceneTransition';
 import { getDebugLevelParam } from './debugLevelParam';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
-import { type HapticService, WebVibrationHapticService } from '../services/HapticService';
+import { type HapticService, createHapticService } from '../services/HapticService';
 import { type SoundService, WebAudioSoundService } from '../services/SoundService';
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { t } from '../i18n/translations';
 import type { Language, TranslationKey } from '../i18n/translations';
 import type { ActiveObstacles, Button, FeedbackKind, Layout, SessionMode } from './gameTypes';
-import { BUTTON_HEIGHT, BUTTON_WIDTH, createBackButton, createButton, drawStarGlyph } from './gameHud';
+import { BUTTON_HEIGHT, BUTTON_WIDTH, createBackButton, createButton } from './gameHud';
 import { GameJuiceFx } from './gameAnimations';
+import { ParticleFx, bakeStar } from './fx';
 import { GameInputController } from './gameInput';
 import { TutorialController } from './gameTutorial';
 import { showLevelCompletePanel, showLevelLostPanel } from './gamePanels';
@@ -80,7 +81,7 @@ const MAX_GRID_SCALE = 1.32;
 export class GameScene extends Phaser.Scene {
   private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
-  private readonly hapticService: HapticService = new WebVibrationHapticService();
+  private readonly hapticService: HapticService = createHapticService();
   private readonly soundService: SoundService = new WebAudioSoundService();
   private readonly analytics: AnalyticsService = new ConsoleAnalyticsService();
 
@@ -95,6 +96,8 @@ export class GameScene extends Phaser.Scene {
   private levelNumber: number | null = null;
   private undoStack = new UndoStack<GameState>();
   private confetti!: ConfettiEmitter;
+  private particles!: ParticleFx;
+  private hudStar: Phaser.GameObjects.Image | null = null;
 
   private layouts = new Map<string, Layout>();
   private containerViews = new Map<string, ContainerView>();
@@ -123,7 +126,7 @@ export class GameScene extends Phaser.Scene {
   private framesLayer!: Phaser.GameObjects.Container;
   private itemsLayer!: Phaser.GameObjects.Container;
   private statusSubText!: Phaser.GameObjects.Text;
-  private stuckBanner!: Phaser.GameObjects.Text;
+  private stuckBanner!: Phaser.GameObjects.Container;
   private undoButton!: Button;
   private extraContainerButton!: Button;
 
@@ -171,9 +174,13 @@ export class GameScene extends Phaser.Scene {
     this.moveCount = 0;
     this.extraContainerUsesLeft = DIFFICULTY.extraContainerFreeUsesPerLevel;
     this.confetti = new ConfettiEmitter(this, 200);
+    this.particles = new ParticleFx(this, 210);
 
     this.fx = new GameJuiceFx({
       scene: this,
+      particles: this.particles,
+      getContainerRoot: (id) => this.containerViews.get(id)?.root,
+      onStarArrive: () => this.popHudStar(),
       getLayout: (id) => this.layouts.get(id),
       getItemsLayerChildren: () => (this.itemsLayer.list as Phaser.GameObjects.Container[]).filter((c) => c.active),
       getGameState: () => this.gameState,
@@ -252,7 +259,7 @@ export class GameScene extends Phaser.Scene {
     pill.setDepth(0);
 
     this.starAnchor = { x: this.vp.width / 2 + pillW / 2 - 24, y: headerY };
-    drawStarGlyph(this, this.starAnchor.x, this.starAnchor.y, 9);
+    this.hudStar = this.add.image(this.starAnchor.x, this.starAnchor.y, bakeStar(this, 20, true)).setDisplaySize(26, 26).setDepth(1);
 
     this.statusSubText = this.add
       .text(this.vp.width / 2, headerY + 32, '', {
@@ -265,16 +272,13 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    this.stuckBanner = this.add
-      .text(this.vp.width / 2, headerY + 56, t('stuckBanner', this.lang), {
-        fontFamily: FONT_FAMILY,
-        fontSize: `${TYPE_SCALE.body}px`,
-        color: COLORS.cream,
-        backgroundColor: COLORS.danger,
-        padding: { x: 10, y: 6 },
-      })
-      .setOrigin(0.5)
-      .setAlpha(0);
+    // "Takıldın" bandı: sert kırmızı zemin yerine sakin koyu erik bir hap (suçlamayan ton).
+    const stuckLabel = this.add.text(0, 0, t('stuckBanner', this.lang), textStyle('caption', { color: COLORS.cream })).setOrigin(0.5);
+    const stuckW = stuckLabel.width + 36;
+    const stuckBg = this.add.graphics();
+    stuckBg.fillStyle(hexToNum(COLORS.overlay), 0.88);
+    stuckBg.fillRoundedRect(-stuckW / 2, -17, stuckW, 34, 17);
+    this.stuckBanner = this.add.container(this.vp.width / 2, headerY + 62, [stuckBg, stuckLabel]).setAlpha(0).setDepth(5);
 
     this.framesLayer = this.add.container(0, 0);
     this.itemsLayer = this.add.container(0, 0);
@@ -381,7 +385,7 @@ export class GameScene extends Phaser.Scene {
   /** Haptic + ses geri bildirimini tek yerden, ayarlara saygılı biçimde tetikler. */
   private feedback(kind: FeedbackKind): void {
     if (this.saveData.hapticEnabled) {
-      if (kind === 'tap' || kind === 'land') this.hapticService.light();
+      if (kind === 'tap' || kind === 'land' || kind === 'star') this.hapticService.light();
       else if (kind === 'complete') this.hapticService.success();
       else if (kind === 'invalid') this.hapticService.warning();
       else this.hapticService.medium();
@@ -389,7 +393,7 @@ export class GameScene extends Phaser.Scene {
     if (this.saveData.soundEnabled) {
       if (kind === 'tap') this.soundService.tap();
       else if (kind === 'land' || kind === 'medium') this.soundService.land();
-      else if (kind === 'complete') this.soundService.complete();
+      else if (kind === 'complete' || kind === 'star') this.soundService.complete();
       else if (kind === 'invalid') this.soundService.invalid();
     }
   }
@@ -575,9 +579,9 @@ export class GameScene extends Phaser.Scene {
     const outcome = tryMove(this.gameState, { sourceId, targetId });
     if (!outcome.ok) {
       this.feedback('invalid');
-      this.fx.flashInvalid(targetId);
       this.drawFrames();
       this.render();
+      this.fx.gentleNo(targetId);
       return;
     }
 
@@ -604,13 +608,15 @@ export class GameScene extends Phaser.Scene {
 
       if (completion) {
         this.comboCount++;
-        this.fx.flashCompletion(targetId);
+        const capacity = newState.containers.find((c) => c.id === targetId)?.capacity ?? 4;
+        this.fx.celebrateCompletion(targetId, completion.type, capacity);
         this.feedback('complete');
         if (this.comboCount >= JUICE.combo.minComboToShow) {
           this.fx.showCombo(targetId, this.comboCount);
         }
       } else {
         this.comboCount = 0;
+        this.fx.sparkleLanding(targetId);
       }
 
       this.checkUnlocks(oldState, newState);
@@ -725,15 +731,23 @@ export class GameScene extends Phaser.Scene {
     const effectiveMoves = this.moveCount + this.undoCount;
     const rating = this.par <= 0 ? 3 : effectiveMoves <= this.par ? 3 : effectiveMoves <= this.par * 1.3 ? 2 : 1;
 
-    showLevelCompletePanel(this, {
-      rating,
-      awarded,
-      isDailyPuzzle: this.sessionMode === 'daily',
-      lang: this.lang,
-      confetti: this.confetti,
-      prefersReducedMotion,
-      onNext: () => fadeToScene(this, 'RoomScene'),
-    });
+    const durationMs = Date.now() - this.levelStartTime;
+    this.time.delayedCall(prefersReducedMotion() ? 200 : 700, () =>
+      showLevelCompletePanel(this, {
+        rating,
+        awarded,
+        isDailyPuzzle: this.sessionMode === 'daily',
+        lang: this.lang,
+        confetti: this.confetti,
+        particles: this.particles,
+        prefersReducedMotion,
+        moves: effectiveMoves,
+        durationMs,
+        onStar: () => this.feedback('star'),
+        onButtonPress: () => this.feedback('tap'),
+        onNext: () => fadeToScene(this, 'RoomScene'),
+      }),
+    );
   }
 
   private onLevelLost(): void {
@@ -750,6 +764,7 @@ export class GameScene extends Phaser.Scene {
     showLevelLostPanel(this, {
       moveLimit: this.moveLimit,
       lang: this.lang,
+      onButtonPress: () => this.feedback('tap'),
       onRetry: () => this.restartSameLevel(),
       onBackToRoom: () => fadeToScene(this, 'RoomScene'),
     });
@@ -766,11 +781,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showStuckBanner(): void {
-    this.tweens.add({ targets: this.stuckBanner, alpha: 1, duration: 200 });
+    if (this.stuckBanner.alpha > 0.5) return;
+    this.stuckBanner.setScale(0.9);
+    this.tweens.add({ targets: this.stuckBanner, alpha: 1, scale: 1, duration: 260, ease: EASE.back });
   }
 
   private hideStuckBanner(): void {
-    this.tweens.add({ targets: this.stuckBanner, alpha: 0, duration: 200 });
+    if (this.stuckBanner.alpha === 0) return;
+    this.tweens.add({ targets: this.stuckBanner, alpha: 0, duration: 200, ease: EASE.out });
+  }
+
+  /** Uçan yıldız HUD'daki yıldıza varınca küçük bir "pop". */
+  private popHudStar(): void {
+    const star = this.hudStar;
+    if (!star) return;
+    const base = star.getData('baseScale') ?? star.scale;
+    star.setData('baseScale', base);
+    this.tweens.killTweensOf(star);
+    star.setScale(base * 1.35);
+    this.tweens.add({ targets: star, scale: base, duration: 260, ease: EASE.back });
   }
 
   /** oldState'te kilitli olup newState'te açılan kapları tespit edip küçük bir parıltı oynatır. */

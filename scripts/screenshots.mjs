@@ -141,7 +141,7 @@ if (want('game') || want('win')) {
   }
   if (want('win')) {
     console.log('  çözücü:', await solveCurrentLevel());
-    await wait(1700);
+    await wait(3200);
     await shot('07-win');
   }
 }
@@ -168,7 +168,7 @@ if (want('lost')) {
     scene.moveCount = scene.moveLimit;
     scene.checkStuckOrWin();
   });
-  await wait(700);
+  await wait(1200);
   await shot('10-lost');
 }
 

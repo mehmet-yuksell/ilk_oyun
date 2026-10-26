@@ -1,22 +1,29 @@
 import Phaser from 'phaser';
 import type { GameState } from '../core/types';
 import { JUICE } from '../config/tuning';
-import { COLORS, EASE, FONT_FAMILY, RADIUS, hexToNum } from './theme';
+import { COLORS, EASE, hexToNum, textStyle } from './theme';
 import { bakeCentered } from './bake';
-import { starPoints } from './gameHud';
 import { t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
 import type { Layout } from './gameTypes';
+import { bakeStar, punchZoom, type ParticleFx } from './fx';
+import { prefersReducedMotion } from './confetti';
+import { viewOf } from './viewport';
 
 /** GameAnimations'ın sahneden ihtiyaç duyduğu her şey (dar arayüz). `get*` fonksiyonları her
  * çağrıda canlı değeri okur -- GameScene'in o anki (sürekli değişen) durumunu yansıtır. */
 export interface JuiceFxHost {
   readonly scene: Phaser.Scene;
+  readonly particles: ParticleFx;
   getLayout: (containerId: string) => Layout | undefined;
+  /** Kabın kalıcı görünüm kökü (çerçeve) -- nazik "hayır" sallanması için. */
+  getContainerRoot: (containerId: string) => Phaser.GameObjects.Container | undefined;
   getItemsLayerChildren: () => Phaser.GameObjects.Container[];
   getGameState: () => GameState;
   getSlotHeight: () => number;
   getStarAnchor: () => { x: number; y: number };
+  /** Uçan yıldızlar sayaca varınca (sayaç ikonunun "pop"u için). */
+  onStarArrive?: () => void;
   getLang: () => Language;
   spawnItemVisual: (type: string, x: number, y: number) => Phaser.GameObjects.Container;
 }
@@ -30,101 +37,137 @@ export class GameJuiceFx {
     this.host = host;
   }
 
+  /** Kilit açılınca: kabın ortasından altın ışıltı halkası + sıcak bir parlama. */
   flashUnlock(containerId: string): void {
     const layout = this.host.getLayout(containerId);
     if (!layout) return;
-    const scene = this.host.scene;
-    const ring = scene.add.circle(layout.centerX, layout.topY + layout.rect.height / 2, 14, hexToNum(COLORS.gold), 0.9);
-    scene.tweens.add({
-      targets: ring,
-      radius: 90,
-      alpha: 0,
-      duration: JUICE.unlock.duration,
-      onComplete: () => ring.destroy(),
-    });
+    const cx = layout.centerX;
+    const cy = layout.topY + layout.rect.height / 2;
+    for (let i = 0; i < 10; i++) {
+      const a = (Math.PI * 2 * i) / 10;
+      this.host.particles.sparkle(cx + Math.cos(a) * layout.rect.width * 0.35, cy + Math.sin(a) * layout.rect.height * 0.3, 1);
+    }
+    this.host.particles.sparkle(cx, layout.topY + 18, 8);
+    const root = this.host.getContainerRoot(containerId);
+    if (root) this.host.scene.tweens.add({ targets: root, scale: { from: 1.05, to: 1 }, duration: JUICE.unlock.duration, ease: EASE.back });
   }
 
-  flashInvalid(containerId: string): void {
-    const layout = this.host.getLayout(containerId);
-    if (!layout) return;
+  /**
+   * Geçersiz hamlede nazik "hayır": sert kırmızı flaş YOK. Hedef kap (çerçeve + içindeki eşyalar)
+   * sönümlenen kısa bir yatay sallanma yapar -- "kafa sallama" hissi.
+   */
+  gentleNo(containerId: string): void {
     const scene = this.host.scene;
-    const g = scene.add.graphics();
-    g.lineStyle(5, hexToNum(COLORS.danger), 1);
-    g.strokeRoundedRect(layout.rect.x, layout.rect.y, layout.rect.width, layout.rect.height, RADIUS.lg);
+    const targets: Phaser.GameObjects.GameObject[] = [];
+    const root = this.host.getContainerRoot(containerId);
+    if (root) targets.push(root);
+    for (const child of this.host.getItemsLayerChildren()) {
+      if (child.getData('containerId') === containerId) targets.push(child);
+    }
+    if (targets.length === 0) return;
+    const bases = targets.map((o) => (o as unknown as { x: number }).x);
+    const proxy = { t: 0 };
     scene.tweens.add({
-      targets: g,
-      alpha: 0,
+      targets: proxy,
+      t: 1,
       duration: JUICE.invalid.duration,
-      onComplete: () => g.destroy(),
+      ease: EASE.out,
+      onUpdate: () => {
+        // sönümlenen sinüs: 2.5 salınım, genlik 7px -> 0
+        const offset = Math.sin(proxy.t * Math.PI * 5) * 7 * (1 - proxy.t);
+        targets.forEach((o, i) => ((o as unknown as { x: number }).x = bases[i] + offset));
+      },
+      onComplete: () => targets.forEach((o, i) => ((o as unknown as { x: number }).x = bases[i])),
     });
   }
 
-  flashCompletion(containerId: string): void {
+  /** Geçerli her hamlede: hedefin en üstündeki eşyanın ayağında küçük bir ışıltı patlaması. */
+  sparkleLanding(containerId: string): void {
+    for (const child of this.host.getItemsLayerChildren()) {
+      if (child.getData('containerId') !== containerId || child.getData('isTop') !== true) continue;
+      this.host.particles.sparkle(child.x, child.y + (child.getData('foot') as number) - 4, 5);
+    }
+  }
+
+  /**
+   * Grup tamamlanınca: (oyun durumunda kap zaten boşaltıldı) 4 eşya bir an geri belirir, sevinçle
+   * zıplar, sonra ışıltıya dönüşüp kaybolur; renkli parçacık patlaması + altın yıldızlar sayaca uçar
+   * + çok hafif zoom vuruşu ve mini titreşim.
+   */
+  celebrateCompletion(containerId: string, type: string, capacity: number): void {
     const layout = this.host.getLayout(containerId);
     if (!layout) return;
     const scene = this.host.scene;
+    const slotHeight = this.host.getSlotHeight();
     const cx = layout.centerX;
     const cy = layout.topY + layout.rect.height / 2;
 
-    const flash = scene.add.graphics();
-    flash.fillStyle(0xffffff, 0.65);
-    flash.fillRoundedRect(layout.rect.x, layout.rect.y, layout.rect.width, layout.rect.height, RADIUS.lg);
-    scene.tweens.add({ targets: flash, alpha: 0, duration: 320, onComplete: () => flash.destroy() });
-
-    const burst = scene.add.circle(cx, cy, 10, hexToNum(COLORS.coral), 0.8);
-    scene.tweens.add({
-      targets: burst,
-      radius: 70,
-      alpha: 0,
-      duration: JUICE.completion.particleDuration,
-      onComplete: () => burst.destroy(),
-    });
-
-    const particleColors = [COLORS.coral, COLORS.turquoise, COLORS.mustard, COLORS.pink];
-    for (let i = 0; i < JUICE.completion.particleCount; i++) {
-      const angle = (Math.PI * 2 * i) / JUICE.completion.particleCount + Math.random() * 0.4;
-      const speed =
-        JUICE.completion.particleSpeedMin +
-        Math.random() * (JUICE.completion.particleSpeedMax - JUICE.completion.particleSpeedMin);
-      const particle = scene.add.circle(cx, cy, 4, hexToNum(particleColors[i % particleColors.length]), 1);
+    for (let i = 0; i < capacity; i++) {
+      const y = layout.topY + (capacity - 1 - i) * slotHeight + slotHeight / 2;
+      const ghost = this.host.spawnItemVisual(type, cx, y).setDepth(160);
+      (ghost.getData('setExcited') as (v: boolean) => void)(true);
+      const sprite = ghost.getData('sprite') as Phaser.GameObjects.Container;
+      const delay = i * 45;
       scene.tweens.add({
-        targets: particle,
-        x: cx + Math.cos(angle) * speed,
-        y: cy + Math.sin(angle) * speed,
-        alpha: 0,
-        duration: JUICE.completion.particleDuration,
-        ease: 'Cubic.easeOut',
-        onComplete: () => particle.destroy(),
+        targets: sprite,
+        y: sprite.y - 14,
+        duration: 170,
+        delay,
+        yoyo: true,
+        ease: EASE.out,
+        onComplete: () => {
+          this.host.particles.sparkle(cx, y, 5);
+          scene.tweens.add({
+            targets: ghost,
+            scale: 0,
+            alpha: 0,
+            duration: 160,
+            ease: EASE.backIn,
+            onComplete: () => ghost.destroy(),
+          });
+        },
       });
     }
 
-    this.flyStarsToCounter(cx, cy);
-    scene.cameras.main.shake(JUICE.completion.cameraShakeDuration, JUICE.completion.cameraShakeIntensity);
+    scene.time.delayedCall(280, () => {
+      this.host.particles.burst(cx, cy, 18);
+      this.flyStarsToCounter(cx, cy);
+    });
+    const root = this.host.getContainerRoot(containerId);
+    if (root) scene.tweens.add({ targets: root, scale: { from: 1.04, to: 1 }, duration: 380, delay: 260, ease: EASE.back });
+    punchZoom(scene, 0.012, 280);
+    if (!prefersReducedMotion()) scene.cameras.main.shake(JUICE.completion.cameraShakeDuration, JUICE.completion.cameraShakeIntensity * 0.6);
   }
 
-  /** Tamamlanan kaptan küçük yıldızlar fırlayıp üstteki yıldız ikonuna doğru uçar (sadece görsel şenlik). */
+  /** Tamamlanan kaptan küçük altın yıldızlar yay çizerek üstteki yıldız sayacına uçar. */
   private flyStarsToCounter(fromX: number, fromY: number): void {
     const scene = this.host.scene;
+    const key = bakeStar(scene, 22, true);
     for (let i = 0; i < JUICE.starFly.starCount; i++) {
       scene.time.delayedCall(i * JUICE.starFly.staggerMs, () => {
-        const star = scene.add.graphics({ x: fromX, y: fromY });
-        star.fillStyle(hexToNum(COLORS.gold), 1);
-        star.fillPoints(starPoints(7), true);
-
+        const star = scene.add.image(fromX, fromY, key).setDisplaySize(28, 28).setDepth(220);
+        const base = star.scale;
+        const spread = (i - (JUICE.starFly.starCount - 1) / 2) * 36;
         const progress = { t: 0 };
         const anchor = this.host.getStarAnchor();
         scene.tweens.add({
           targets: progress,
           t: 1,
           duration: JUICE.starFly.duration,
-          ease: 'Cubic.easeIn',
+          ease: EASE.inOut,
           onUpdate: () => {
             const tt = progress.t;
-            star.x = Phaser.Math.Linear(fromX, anchor.x, tt);
-            star.y = Phaser.Math.Linear(fromY, anchor.y, tt) - JUICE.starFly.arcHeight * Math.sin(Math.PI * tt);
-            star.setScale(1 - tt * 0.5);
+            const bow = Math.sin(Math.PI * tt);
+            star.x = Phaser.Math.Linear(fromX, anchor.x, tt) + spread * bow;
+            star.y = Phaser.Math.Linear(fromY, anchor.y, tt) - JUICE.starFly.arcHeight * bow;
+            star.setScale(base * (1 + 0.35 * bow - 0.35 * tt));
+            star.setAngle(tt * 220);
           },
-          onComplete: () => star.destroy(),
+          onComplete: () => {
+            star.destroy();
+            this.host.particles.sparkle(anchor.x, anchor.y, 2);
+            this.host.onStarArrive?.();
+          },
         });
       });
     }
@@ -137,27 +180,34 @@ export class GameJuiceFx {
     return t('comboText2', lang);
   }
 
+  /** Art arda tamamlamalarda: kabın üstünde Back.Out ile beliren, yükselip sönen sıcak bir hap. */
   showCombo(containerId: string, combo: number): void {
     const layout = this.host.getLayout(containerId);
     if (!layout) return;
     const scene = this.host.scene;
     const lang = this.host.getLang();
-    const text = scene.add
-      .text(layout.centerX, layout.topY - 10, `${t('comboLabel', lang, { n: combo })} ${this.comboTextFor(combo)}`, {
-        fontFamily: FONT_FAMILY,
-        fontSize: '18px',
-        fontStyle: '800',
-        color: COLORS.coral,
-        stroke: '#ffffff',
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5);
+    const label = scene.add.text(0, 0, `${t('comboLabel', lang, { n: combo })} ${this.comboTextFor(combo)}`, textStyle('buttonSmall', { color: COLORS.cream })).setOrigin(0.5);
+    const w = label.width + 32;
+    const h = 38;
+    const bg = scene.add.graphics();
+    bg.fillStyle(hexToNum(COLORS.terracotta), 1);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+    bg.lineStyle(2, 0xffffff, 0.6);
+    bg.strokeRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4, h / 2 - 2);
+    const y0 = layout.topY - 14;
+    // ekran kenarından taşmasın: kenar kaplarda hap içeri kaydırılır
+    const vw = viewOf(scene).width;
+    const px = Phaser.Math.Clamp(layout.centerX, w / 2 + 12, vw - w / 2 - 12);
+    const pill = scene.add.container(px, y0, [bg, label]).setDepth(230).setScale(0.4).setAlpha(0);
+    scene.tweens.add({ targets: pill, scale: 1, alpha: 1, duration: 240, ease: EASE.back });
     scene.tweens.add({
-      targets: text,
-      y: layout.topY - 10 - JUICE.combo.riseDistance,
+      targets: pill,
+      y: y0 - JUICE.combo.riseDistance,
       alpha: 0,
-      duration: JUICE.combo.displayDuration,
-      onComplete: () => text.destroy(),
+      duration: 420,
+      delay: JUICE.combo.displayDuration - 200,
+      ease: EASE.in,
+      onComplete: () => pill.destroy(),
     });
   }
 
