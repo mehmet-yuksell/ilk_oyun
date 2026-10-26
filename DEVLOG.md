@@ -125,3 +125,33 @@ seviye 34, seviye 120, kaybetme).
 **Performans notu**: arka plan tek doku (eskiden her sahnede ~15 Graphics path), zerrecikler 3 tween/adet × 12; sahne
 kapanınca Phaser tween'leri ve nesneleri otomatik temizliyor. Arka plan dokuları tema başına bir kez üretilip `TextureManager`'da kalıyor
 (5 tema × ~2.5 MB üst sınır; pratikte oturum başına 1-2 tema).
+
+---
+
+## FAZ 2 — Oyun nesneleri
+
+**Yapılanlar**
+- **Kaplar = cam önlü ahşap vitrin dolabı** (`scenes/containerView.ts`): ahşap degrade çerçeve + silik damar, krem iç
+  duvar, iç üst/yan gölge (derinlik), her yuva için bir **raf tahtası** (eşyalar rafta durur → Faz 0 madde 10'daki havada
+  asılı gölgeler bitti), çapraz cam parıltısı, zemine düşen bulanık gölge. Kilitli kap soğuk lavanta-gri tonda.
+- **Eşyalar**: 10 siluet korunarak ortak bir ışık geçişi (üstten aydınlık, alttan sıcak gölge, sol-üst seramik parıltısı)
+  ve **ayrı** bulanık temas gölgesi. Yüz 3 pişmiş durum (açık / kapalı / heyecanlı).
+- **Pişirme hattı** (`bake.ts`, `canvasGraphics.ts`): Phaser Graphics API'sinin kullanılan alt kümesini Canvas 2D'ye
+  çeviren adaptör → mevcut çizim kodu değişmeden bir kez yüksek çözünürlüklü dokuya pişiyor (gerçek degrade + shadowBlur).
+- **Seçim**: altın parlama halesi nabız atar; run'daki eşyalar `Back.Out` ile kalkar, sonra hafif süzülme + ±2° sallanma;
+  rafta kalan gölge küçülüp solar.
+- **Taşıma**: her eşya ayrı uçar (55 ms aralık), yay yüksekliği mesafeye göre; uçuşta dikey esneme + yöne doğru eğilme,
+  varışta tabandan ezilme; yerleşince `Back.Out` toparlanma ("pop"), gölge bir an yayılır, ayakta halka dalgası.
+- Ezilme/esneme ekseni eşyanın **ayağı** (sprite orijini) — eşya rafa basarak eziliyor, havada değil.
+
+**Performans / bellek denetimi** (`scripts/_perfcheck.cjs`, seviye 120, 32 eşya, 25 seç-taşı-geri al döngüsü)
+- Eskiden: her durum değişikliğinde ~32 Container + 64 Graphics yok edilip yeniden çiziliyordu; her dokunuşta tüm kap
+  çerçeveleri yeniden çiziliyordu. Şimdi: eşyalar **havuzdan** (tür+boyut), kaplar kalıcı, çalışma anında yalnızca Image.
+- Denetimde bir **sızıntı bulundu ve düzeltildi**: havuz temizlenirken iç sprite'ların sonsuz "nefes" tween'leri
+  durdurulmuyordu (33 → 259 tween). Düzeltme sonrası 25 döngüde: görüntü listesi 28→28, eşya 32→32, tween 33→33, doku 45→46 (halka dokusu bir kez).
+- Geri al artık kapları/havuzu yeniden kurmuyor (dizilim imzası değişmediyse).
+
+**Kararlar**
+- Kap çerçevesi seçilince hareket etmiyor (yalnızca hale): çerçeve kalkarsa raftaki eşyalarla hizası bozuluyordu.
+- "×N" rozeti kaldırıldı: eşyalar tek tek uçtuğu için sayı zaten görülüyor.
+- `JUICE` ayarları güncellendi: kalkma 10→16 px / 200 ms, uçuş 300 ms + 55 ms aralık, iniş ezilmesi 1.14/0.86, 260 ms.

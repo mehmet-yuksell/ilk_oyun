@@ -117,20 +117,24 @@ export type ConfettiShape = (typeof CONFETTI.shapes)[number];
 export const JUICE = {
   /** Bir kap seçilince üst run'ın yukarı kalkma animasyonu. */
   select: {
-    liftDistance: 10,
-    duration: 120,
+    liftDistance: 16,
+    duration: 200,
   },
   /** Taşıma sırasında eşyaların kaynaktan hedefe yay çizerek gitmesi -- kısa/yumuşak olsun diye
    * süre ve yay yüksekliği azaltıldı (bkz. Faz 4 kararları). */
   move: {
-    duration: 220,
-    arcHeight: 44,
+    duration: 300,
+    arcHeight: 48,
+    /** Run'daki eşyalar arasındaki kalkış gecikmesi (her eşya ayrı uçar -- Faz 2). */
+    staggerMs: 55,
+    /** Uçuşun ortasında dikey esneme miktarı (squash & stretch'in "stretch" yarısı). */
+    stretch: 0.12,
   },
   /** Yerleşme anındaki squash & stretch sıçraması -- "aşırı zıplama" bulunup yumuşatıldı. */
   land: {
-    duration: 140,
-    squashScaleX: 1.1,
-    squashScaleY: 0.9,
+    duration: 260,
+    squashScaleX: 1.14,
+    squashScaleY: 0.86,
   },
   /** Bir kap tamamlanınca: parçacık patlaması + kamera titremesi (daha ince). */
   completion: {

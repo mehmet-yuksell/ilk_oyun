@@ -15,9 +15,10 @@ import { dailyPuzzleConfig } from '../core/dailyPuzzle';
 import { todayKey } from '../core/dailyReward';
 import { generateVerifiedLevel } from '../core/levelGenerator';
 import { computePar } from '../core/solver';
-import { accentFor, createItemVisual, strokeArc } from './itemVisuals';
+import { MYSTERY_TYPE, createItemVisual, resetItemVisual } from './itemVisuals';
+import { ContainerView } from './containerView';
 import { JUICE, DIFFICULTY, themeForLevel } from '../config/tuning';
-import { COLORS, FONT_FAMILY, RADIUS, SHADOW, TYPE_SCALE, hexToNum, shade } from './theme';
+import { COLORS, FONT_FAMILY, TYPE_SCALE, hexToNum } from './theme';
 import { BASE_HEIGHT, BASE_WIDTH, setupView, toWorld, type View } from './viewport';
 import { drawCozyBackground } from './background';
 import { readSafeAreaInsets } from './safeArea';
@@ -39,7 +40,6 @@ import { showLevelCompletePanel, showLevelLostPanel } from './gamePanels';
 
 const PROGRESS_LEVEL_STARS = 10;
 const DAILY_PUZZLE_STARS = 15;
-const MYSTERY_TYPE = '__mystery__';
 /** saveData.seenHints'teki engel ipucu anahtarlarıyla (mystery/lock/typeLock) aynı mekanizmayı
  * paylaşan, ilk-hamle el animasyonu için "bir kere gösterildi" bayrağı. */
 const MOVE_TUTORIAL_HINT_KEY = 'moveTutorial';
@@ -77,8 +77,6 @@ const BASE_ITEM_INSET_Y = 5;
 const MIN_GRID_SCALE = 0.52;
 const MAX_GRID_SCALE = 1.32;
 
-const INK = hexToNum(COLORS.ink);
-
 export class GameScene extends Phaser.Scene {
   private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
@@ -99,6 +97,9 @@ export class GameScene extends Phaser.Scene {
   private confetti!: ConfettiEmitter;
 
   private layouts = new Map<string, Layout>();
+  private containerViews = new Map<string, ContainerView>();
+  private layoutSignature = '';
+  private itemPool = new Map<string, Phaser.GameObjects.Container[]>();
   private selectedId: string | null = null;
   private comboCount = 0;
   private isAnimating = false;
@@ -158,6 +159,9 @@ export class GameScene extends Phaser.Scene {
     this.gameOver = false;
     this.undoStack = new UndoStack<GameState>();
     this.layouts = new Map();
+    this.containerViews = new Map();
+    this.layoutSignature = '';
+    this.itemPool = new Map();
     this.selectedId = null;
     this.comboCount = 0;
     this.isAnimating = false;
@@ -171,7 +175,7 @@ export class GameScene extends Phaser.Scene {
     this.fx = new GameJuiceFx({
       scene: this,
       getLayout: (id) => this.layouts.get(id),
-      getItemsLayerChildren: () => this.itemsLayer.list as Phaser.GameObjects.Container[],
+      getItemsLayerChildren: () => (this.itemsLayer.list as Phaser.GameObjects.Container[]).filter((c) => c.active),
       getGameState: () => this.gameState,
       getSlotHeight: () => this.slotHeight,
       getStarAnchor: () => this.starAnchor,
@@ -462,109 +466,48 @@ export class GameScene extends Phaser.Scene {
   /** Kap sayısı/dizilimi değiştiğinde (ör. ekstra kap eklenince) layout+çerçeve+içerik tamamen yenilenir. */
   private refreshAll(): void {
     this.computeLayouts();
+    // Dizilim (kap kimlikleri + boyut) değişmediyse (ör. geri al) kalıcı görünümler ve havuz korunur.
+    const signature = `${this.gameState.containers.map((c) => c.id).join(',')}|${this.containerWidth.toFixed(2)}|${this.slotHeight.toFixed(2)}`;
+    if (signature !== this.layoutSignature) {
+      this.layoutSignature = signature;
+      this.destroyContainerViews();
+      this.clearItemPool();
+    }
     this.drawFrames();
     this.render();
   }
 
+  private destroyContainerViews(): void {
+    for (const view of this.containerViews.values()) view.destroy();
+    this.containerViews.clear();
+  }
+
+  /** Kalıcı ContainerView'ları oluşturur (yoksa) ve seçim/kilit durumlarını eşitler -- her dokunuşta
+   * yeniden çizim YOK (eskiden tüm çerçeveler her seçimde yok edilip yeniden çiziliyordu). */
   private drawFrames(): void {
-    this.framesLayer.removeAll(true);
     for (const c of this.gameState.containers) {
       const layout = this.layouts.get(c.id)!;
-      const isSelected = this.selectedId === c.id;
-      const locked = isContainerLocked(c, this.gameState);
-      const lift = isSelected ? 4 : 0;
-      const rx = layout.rect.x;
-      const ry = layout.rect.y - lift;
-      const rw = layout.rect.width;
-      const rh = layout.rect.height;
-
-      const g = this.add.graphics();
-
-      if (isSelected) {
-        g.fillStyle(hexToNum(COLORS.coral), 0.18);
-        g.fillRoundedRect(rx - 5, ry - 5, rw + 10, rh + 10, RADIUS.lg + 5);
+      let view = this.containerViews.get(c.id);
+      if (!view) {
+        view = new ContainerView(
+          this,
+          layout.centerX,
+          layout.topY + layout.rect.height / 2,
+          {
+            width: layout.rect.width,
+            height: layout.rect.height,
+            capacity: c.capacity,
+            slotHeight: this.slotHeight,
+            itemHeight: this.slotHeight - this.itemInsetY * 2,
+          },
+          c.onlyAccepts,
+        );
+        this.framesLayer.add(view.root);
+        this.containerViews.set(c.id, view);
       }
-
-      // gövde: hafif degrade "raf içi" zemin
-      g.fillGradientStyle(
-        locked ? shade(COLORS.surfaceMuted, -0.05) : hexToNum(COLORS.surface),
-        locked ? shade(COLORS.surfaceMuted, -0.05) : hexToNum(COLORS.surface),
-        locked ? shade(COLORS.surfaceMuted, -0.15) : shade(COLORS.surface, -0.06),
-        locked ? shade(COLORS.surfaceMuted, -0.15) : shade(COLORS.surface, -0.06),
-        locked ? 0.75 : 0.9,
-        locked ? 0.75 : 0.9,
-        locked ? 0.75 : 0.9,
-        locked ? 0.75 : 0.9,
-      );
-      g.fillRoundedRect(rx, ry, rw, rh, RADIUS.lg);
-
-      // kapasite bölme çizgileri (boş gözler hafifçe belli olsun)
-      g.lineStyle(1, hexToNum(COLORS.inkSoft), 0.14);
-      for (let i = 1; i < c.capacity; i++) {
-        const ly = ry + i * this.slotHeight;
-        g.lineBetween(rx + 8, ly, rx + rw - 8, ly);
-      }
-
-      // dış çerçeve (ahşap/raf kenarı hissi)
-      g.lineStyle(
-        isSelected ? 4 : 3,
-        isSelected ? hexToNum(COLORS.coral) : locked ? hexToNum(COLORS.inkSoft) : shade(COLORS.amber, -0.1),
-        isSelected ? 1 : locked ? 0.55 : 0.75,
-      );
-      g.strokeRoundedRect(rx, ry, rw, rh, RADIUS.lg);
-
-      // iç gölge: camın en üstte hafifçe koyulaşması -- "içine bakılan bir kap" hissi.
-      g.fillStyle(SHADOW.color, 0.1);
-      g.fillRoundedRect(rx, ry, rw, Math.min(16, rh * 0.18), { tl: RADIUS.lg, tr: RADIUS.lg, bl: 0, br: 0 });
-      // cam rim parıltısı: üst kenarın hemen içinde ince bir parlak çizgi.
-      g.lineStyle(2, 0xffffff, 0.5);
-      g.lineBetween(rx + RADIUS.lg * 0.6, ry + 2, rx + rw - RADIUS.lg * 0.6, ry + 2);
-
-      this.framesLayer.add(g);
-
-      if (locked) {
-        // Üst-sol köşe: üst item her zaman kap merkezinde durduğu için köşe rozetleri hiçbir
-        // zaman eşyanın altında kalmaz (bkz. Faz 4 kararları -- eski merkez konum eşyanın
-        // arkasında neredeyse tamamen gizleniyordu).
-        this.framesLayer.add(this.createLockGlyph(rx + 18, ry + 18));
-      }
-      if (c.onlyAccepts) {
-        this.framesLayer.add(this.createTypeLockGlyph(rx + rw - 18, ry + 18, c.onlyAccepts));
-      }
+      view.setLocked(isContainerLocked(c, this.gameState));
+      view.setSelected(this.selectedId === c.id);
     }
-  }
-
-  /** Büyük, anlaşılır bir asma kilit rozeti: kavis (shackle) + gövde + anahtar deliği, her zaman
-   * okunur kalması için beyaz bir rozet zemini üzerinde (bkz. Faz 4 kararları -- eskisi çok küçük
-   * ve zemin olmadan düşük kontrastlıydı). */
-  private createLockGlyph(x: number, y: number): Phaser.GameObjects.Graphics {
-    const g = this.add.graphics({ x, y });
-    g.fillStyle(hexToNum(COLORS.surface), 0.95);
-    g.fillCircle(0, 1, 15);
-    g.lineStyle(2, hexToNum(COLORS.inkSoft), 0.3);
-    g.strokeCircle(0, 1, 15);
-
-    g.lineStyle(3.2, INK, 0.85);
-    strokeArc(g, 0, -1, 6.5, 180, 360, 10);
-    g.fillStyle(INK, 0.85);
-    g.fillRoundedRect(-9, -2, 18, 15, 4);
-    g.fillStyle(hexToNum(COLORS.surface), 0.9);
-    g.fillCircle(0, 4, 2.2);
-    return g;
-  }
-
-  /** "Tek türlü kap" engelinin renkli halka göstergesi -- o türün aksan rengiyle boyanır, lock
-   * rozetiyle aynı ölçekte (bkz. Faz 4 kararları: daha belirgin olsun diye büyütüldü). */
-  private createTypeLockGlyph(x: number, y: number, acceptedType: string): Phaser.GameObjects.Graphics {
-    const g = this.add.graphics({ x, y });
-    const color = hexToNum(accentFor(acceptedType));
-    g.fillStyle(hexToNum(COLORS.surface), 0.95);
-    g.fillCircle(0, 0, 11);
-    g.lineStyle(3.2, color, 1);
-    g.strokeCircle(0, 0, 11);
-    g.fillStyle(color, 1);
-    g.fillCircle(0, 0, 5);
-    return g;
   }
 
   private findContainerAt(x: number, y: number): string | null {
@@ -843,8 +786,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Eşya görsellerini oyun durumuna göre yerleştirir. Görseller HAVUZDAN gelir (tür+boyut başına):
+   * her durum değişikliğinde yok edip yeniden oluşturmak yerine (eski davranış) önceki karedekiler
+   * geri bırakılıp yeniden kullanılır -- sıfır çöp üretimi, sıfır yeni doku.
+   */
   private render(): void {
-    this.itemsLayer.removeAll(true);
+    this.releaseItemVisuals();
 
     const total = this.gameState.containers.reduce((sum, c) => sum + c.items.length, 0);
     const activePointerId = this.inputController.getActivePointerId();
@@ -857,44 +805,24 @@ export class GameScene extends Phaser.Scene {
 
       c.items.forEach((item, idx) => {
         const isTopItem = idx === c.items.length - 1;
-        const slotFromBottom = idx;
-        const rowFromTop = c.capacity - 1 - slotFromBottom;
+        const rowFromTop = c.capacity - 1 - idx;
         const x = layout.centerX;
         const restY = layout.topY + rowFromTop * this.slotHeight + this.slotHeight / 2;
 
-        const isLifted = this.selectedId === c.id && idx >= liftIndexThreshold;
-        const y = isLifted ? restY - JUICE.select.liftDistance : restY;
-
         const displayType = this.mysteryActive && !isTopItem ? MYSTERY_TYPE : item.type;
-        const visual = this.spawnItemVisual(displayType, x, restY);
+        const visual = this.acquireItemVisual(displayType, x, restY);
         visual.setData('containerId', c.id);
         visual.setData('stackIndex', idx);
         visual.setData('isTop', isTopItem);
         visual.setData('inDragRun', idx >= c.items.length - dragRunLength && c.id === activePointerId);
         visual.setData('baseX', x);
         visual.setData('baseY', restY);
-        this.itemsLayer.add(visual);
 
+        const isLifted = this.selectedId === c.id && idx >= liftIndexThreshold;
         if (isLifted) {
-          (visual.getData('setExcited') as ((v: boolean) => void) | undefined)?.(true);
-          this.tweens.add({ targets: visual, y, duration: JUICE.select.duration, ease: 'Sine.easeOut' });
-        }
-
-        // Boştaki hafif "nefes alma" pulsasyonu -- yalnızca en üstteki (görünür) eşyada, performans
-        // için. Her karakter farklı FAZ ve sürede nefes alsın diye rastgele gecikme + süre verilir.
-        if (isTopItem) {
-          const duration = Phaser.Math.Between(JUICE.idle.durationMin, JUICE.idle.durationMax);
-          const delay = Phaser.Math.Between(0, 500);
-          this.tweens.add({
-            targets: visual,
-            scaleX: 1 + JUICE.idle.scaleAmount,
-            scaleY: 1 + JUICE.idle.scaleAmount,
-            duration,
-            delay,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut',
-          });
+          this.fx.liftItem(visual, idx - liftIndexThreshold);
+        } else if (isTopItem) {
+          this.fx.breathe(visual);
         }
       });
     }
@@ -906,60 +834,66 @@ export class GameScene extends Phaser.Scene {
         : `${t('moveLabel', this.lang)}: ${this.moveCount}`;
     this.statusSubText.setText(`${moveText}   ${t('remainingItemsLabel', this.lang)}: ${total}`);
     const movesLeft = this.moveLimit > 0 ? this.moveLimit - effectiveMoves : Infinity;
-    this.statusSubText.setColor(movesLeft <= 3 ? COLORS.danger : COLORS.inkSoft);
+    this.statusSubText.setColor(movesLeft <= 3 ? COLORS.gentleNo : COLORS.inkSoft);
   }
 
-  private spawnItemVisual(type: string, x: number, y: number): Phaser.GameObjects.Container {
-    const w = this.containerWidth - this.itemInsetX * 2;
-    const h = this.slotHeight - this.itemInsetY * 2;
-    if (type === MYSTERY_TYPE) {
-      return this.createMysteryVisual(x, y, w, h);
+  private itemSize(): { w: number; h: number } {
+    return { w: this.containerWidth - this.itemInsetX * 2, h: this.slotHeight - this.itemInsetY * 2 };
+  }
+
+  /** Aktif görselleri havuza geri bırakır (yok etmeden): tween'leri durdurulur, poz sıfırlanır, gizlenir. */
+  private releaseItemVisuals(): void {
+    for (const child of this.itemsLayer.list as Phaser.GameObjects.Container[]) {
+      if (!child.active) continue;
+      this.tweens.killTweensOf(child);
+      resetItemVisual(child);
+      child.setActive(false).setVisible(false);
+      child.setData('containerId', null);
+      child.setData('isTop', false);
+      child.setData('inDragRun', false);
+      const key = child.getData('poolKey') as string;
+      let bucket = this.itemPool.get(key);
+      if (!bucket) {
+        bucket = [];
+        this.itemPool.set(key, bucket);
+      }
+      bucket.push(child);
     }
+  }
+
+  private acquireItemVisual(type: string, x: number, y: number): Phaser.GameObjects.Container {
+    const { w, h } = this.itemSize();
+    const key = `${type}|${Math.round(w)}|${Math.round(h)}`;
+    const pooled = this.itemPool.get(key)?.pop();
+    if (pooled) {
+      pooled.setActive(true).setVisible(true).setPosition(x, y);
+      // çizim sırası = durum sırası (alttaki eşya önce): yeniden kullanılan nesne en üste alınır
+      this.itemsLayer.bringToTop(pooled);
+      return pooled;
+    }
+    const visual = this.spawnItemVisual(type, x, y);
+    visual.setData('poolKey', key);
+    this.itemsLayer.add(visual);
+    return visual;
+  }
+
+  /** Düzen değişince (farklı eşya boyutu) eski boyuttaki havuzlanmış/aktif görseller atılır. */
+  private clearItemPool(): void {
+    for (const child of this.itemsLayer.list as Phaser.GameObjects.Container[]) {
+      // iç sprite/gölge tween'leri de (sonsuz "nefes" dahil) durdurulmalı -- yoksa yok edilmiş
+      // nesneleri hedefleyen tween'ler birikir (Faz 2 sızıntı denetiminde bulundu).
+      this.tweens.killTweensOf(child);
+      resetItemVisual(child);
+    }
+    this.itemsLayer.removeAll(true);
+    this.itemPool.clear();
+  }
+
+  /** Uçuş animasyonu gibi geçici kullanımlar için havuz dışı bir görsel (çağıran yok eder). */
+  private spawnItemVisual(type: string, x: number, y: number): Phaser.GameObjects.Container {
+    const { w, h } = this.itemSize();
     const { container } = createItemVisual(this, type, w, h);
     container.setPosition(x, y);
-    return container;
-  }
-
-  /** "Gizemli eşya" engeli: kabın en üstünde olmayan eşyalar yüzü kapalı bir "?" olarak çizilir.
-   * Zarif/hafif bir "örtülü" his için AÇIK bir degrade + ince noktalı çerçeve kullanılır -- eski
-   * koyu/ağır gövde yerine (bkz. Faz 4 kararları). */
-  private createMysteryVisual(x: number, y: number, w: number, h: number): Phaser.GameObjects.Container {
-    const container = this.add.container(x, y);
-    const g = this.add.graphics();
-    g.fillStyle(SHADOW.color, SHADOW.alpha);
-    g.fillEllipse(0, h * 0.4, w * 0.6, h * 0.26);
-    const bodyW = w * 0.64;
-    const bodyH = h * 0.64;
-    g.fillGradientStyle(
-      shade(COLORS.inkSoft, 0.62),
-      shade(COLORS.inkSoft, 0.62),
-      shade(COLORS.inkSoft, 0.28),
-      shade(COLORS.inkSoft, 0.28),
-      1,
-      1,
-      1,
-      1,
-    );
-    g.fillRoundedRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH, 10);
-    // noktalı çerçeve: "örtülü/kapalı" hissini ağırlaştırmadan veren ince bir detay.
-    g.fillStyle(hexToNum(COLORS.surface), 0.8);
-    const dotR = 1.4;
-    const inset = 7;
-    const dotsPerSide = 5;
-    for (let i = 0; i < dotsPerSide; i++) {
-      const tt = i / (dotsPerSide - 1);
-      const ex = -bodyW / 2 + inset + tt * (bodyW - inset * 2);
-      g.fillCircle(ex, -bodyH / 2 + inset, dotR);
-      g.fillCircle(ex, bodyH / 2 - inset, dotR);
-    }
-    g.fillStyle(0xffffff, 0.35);
-    g.fillEllipse(-bodyW * 0.18, -bodyH * 0.26, bodyW * 0.3, bodyH * 0.2);
-    container.add(g);
-    container.add(
-      this.add
-        .text(0, 0, '?', { fontFamily: FONT_FAMILY, fontSize: `${Math.round(bodyH * 0.6)}px`, fontStyle: '900', color: COLORS.ink })
-        .setOrigin(0.5),
-    );
     return container;
   }
 }

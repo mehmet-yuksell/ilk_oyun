@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import { JUICE } from '../config/tuning';
 import { ITEM_TYPE_POOL } from '../core/itemTypePool';
 import type { ItemType } from '../core/types';
-import { COLORS, HIGHLIGHT, ITEM_ACCENTS, SHADOW, hexToNum, shade } from './theme';
+import { COLORS, FONT_FAMILY, HIGHLIGHT, ITEM_ACCENTS, hexToNum, shade } from './theme';
+import type { GraphicsLike } from './canvasGraphics';
+import { bakeCentered } from './bake';
 
 /**
  * Her eşya türü kendi siluetinden (kitap/kupa/saksı bitkisi/kavanoz/ayıcık/lamba/vazo/tabak/
@@ -10,6 +12,11 @@ import { COLORS, HIGHLIGHT, ITEM_ACCENTS, SHADOW, hexToNum, shade } from './them
  * bkz. Faz 4 kararları: eski yüz çok "çocuksu/yapay" okunuyordu) tanınabilir. Her çizim aynı
  * dili paylaşır: 2-3 tonlu degrade gövde + üstte parlama + altta yumuşak gölge + gövdenin koyu
  * tonunda ince kontur (tüm türlerde aynı kalınlık). Düz tek renk şekil YASAK.
+ *
+ * Faz 2: çizimler artık Canvas 2D'ye BİR KEZ pişiriliyor (bkz. bake.ts / canvasGraphics.ts) ve
+ * pişirme hattı her türe aynı "ışık" geçişini uygular: üstten yumuşak aydınlık, alttan sıcak gölge,
+ * sol-üstte seramik/cam parıltısı, arkada gerçek bulanık temas gölgesi. Çalışma anında bir eşya =
+ * 2 Image (gövde + yüz); göz kırpma yalnızca yüz dokusunu değiştirir.
  */
 
 const ACCENT_BY_TYPE: Record<string, string> = Object.fromEntries(
@@ -23,24 +30,19 @@ export function accentFor(type: ItemType): string {
 const INK = hexToNum(COLORS.ink);
 const CREAM = hexToNum(COLORS.cream);
 
-function shadowBase(g: Phaser.GameObjects.Graphics, w: number, h: number): void {
-  g.fillStyle(SHADOW.color, SHADOW.alpha);
-  g.fillEllipse(0, h * 0.4, w * 0.6, h * 0.26);
-}
-
-function gloss(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number): void {
+function gloss(g: GraphicsLike, x: number, y: number, w: number, h: number): void {
   g.fillStyle(HIGHLIGHT.color, HIGHLIGHT.alpha);
   g.fillEllipse(x, y, w, h);
 }
 
 /** Not: üst tonu fazla AÇMAK (ör. +0.3) gövdeyi beyaza yakınlaştırıp "soluk" bir pastel hissi verir
  * -- bu yüzden üst ton hafifçe açılır, alt ton ise derinlik için belirgin koyultulur. */
-function gradientBody(g: Phaser.GameObjects.Graphics, accent: string): void {
+function gradientBody(g: GraphicsLike, accent: string): void {
   g.fillGradientStyle(shade(accent, 0.14), shade(accent, 0.14), shade(accent, -0.3), shade(accent, -0.3), 1, 1, 1, 1);
 }
 
 /** Her çizimin koyu aksan tonunda ince bir dış kontur bırakması için paylaşılan yardımcı. */
-function contour(g: Phaser.GameObjects.Graphics, accent: string, width = 1.6): void {
+function contour(g: GraphicsLike, accent: string, width = 1.6): void {
   g.lineStyle(width, shade(accent, -0.35), 0.55);
 }
 
@@ -51,7 +53,7 @@ function contour(g: Phaser.GameObjects.Graphics, accent: string, width = 1.6): v
  * düz segmentlere bölüp lineBetween ile çiziyoruz -- aynı görsel sonucu, path komutu olmadan verir.
  */
 export function strokeArc(
-  g: Phaser.GameObjects.Graphics,
+  g: GraphicsLike,
   cx: number,
   cy: number,
   r: number,
@@ -94,8 +96,7 @@ export interface FaceSpec {
  * -- "tutarlı gölge/parlama/temiz şekil" diline uysun diye gövdedeki gloss() ile aynı beyaz tonu
  * paylaşır (bkz. Faz 4 kararları: gözlem -- eski yüz çok "sevimli/yapay" okunuyordu).
  */
-function drawFace(g: Phaser.GameObjects.Graphics, spec: FaceSpec, eyeState: EyeState, excited: boolean): void {
-  g.clear();
+function drawFace(g: GraphicsLike, spec: FaceSpec, eyeState: EyeState, excited: boolean): void {
   const eyeScale = excited ? JUICE.excited.eyeScale : 1;
   const r = spec.eyeR * eyeScale * 0.82;
 
@@ -121,35 +122,10 @@ interface FaceController {
   setExcited(excited: boolean): void;
 }
 
-function attachFace(
-  scene: Phaser.Scene,
-  container: Phaser.GameObjects.Container,
-  spec: FaceSpec,
-): FaceController {
-  const faceG = scene.add.graphics();
-  container.add(faceG);
-  let eyeState: EyeState = 'open';
-  let excited = false;
-  drawFace(faceG, spec, eyeState, excited);
-  return {
-    setEyeState(state: EyeState) {
-      if (eyeState === state) return;
-      eyeState = state;
-      drawFace(faceG, spec, eyeState, excited);
-    },
-    setExcited(value: boolean) {
-      if (excited === value) return;
-      excited = value;
-      drawFace(faceG, spec, eyeState, excited);
-    },
-  };
-}
+type Drawer = (g: GraphicsLike, w: number, h: number, accent: string) => FaceSpec;
 
-type Drawer = (g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string) => FaceSpec;
-
-function drawBook(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawBook(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const bw = s * 1.55;
   const bh = s * 0.8;
   gradientBody(g, accent);
@@ -164,9 +140,8 @@ function drawBook(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: 
   return { eyeY: -bh * 0.04, eyeGapX: bw * 0.15, eyeR: bh * 0.15, mouthY: bh * 0.26, mouthR: bw * 0.13 };
 }
 
-function drawCup(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawCup(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const bw = s * 0.95;
   const bh = s * 0.72;
   const top = -bh / 2 + 2;
@@ -188,9 +163,8 @@ function drawCup(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: s
   return { eyeY: faceCy - bh * 0.1, eyeGapX: bw * 0.2, eyeR: bh * 0.16, mouthY: faceCy + bh * 0.16, mouthR: bw * 0.16 };
 }
 
-function drawPlant(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawPlant(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const potW = s * 0.85;
   const potH = s * 0.5;
   const potY = h * 0.18;
@@ -224,9 +198,8 @@ function drawPlant(g: Phaser.GameObjects.Graphics, w: number, h: number, accent:
   return { eyeY: faceCy - potH * 0.08, eyeGapX: potW * 0.18, eyeR: potH * 0.22, mouthY: faceCy + potH * 0.24, mouthR: potW * 0.16 };
 }
 
-function drawJar(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawJar(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const bodyW = s * 0.82;
   const bodyH = s * 0.74;
   const bodyY = h * 0.08;
@@ -242,9 +215,8 @@ function drawJar(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: s
   return { eyeY: bodyY - bodyH * 0.02, eyeGapX: bodyW * 0.2, eyeR: bodyH * 0.14, mouthY: bodyY + bodyH * 0.22, mouthR: bodyW * 0.16 };
 }
 
-function drawTeddyBear(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawTeddyBear(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const headR = s * 0.28;
   const headY = -s * 0.2;
   const bodyW = s * 0.68;
@@ -264,9 +236,8 @@ function drawTeddyBear(g: Phaser.GameObjects.Graphics, w: number, h: number, acc
   return { eyeY: headY - headR * 0.08, eyeGapX: headR * 0.36, eyeR: headR * 0.22, mouthY: headY + headR * 0.22, mouthR: headR * 0.26 };
 }
 
-function drawLamp(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawLamp(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const shadeW = s * 1.1;
   const shadeH = s * 0.42;
   const shadeY = -s * 0.22;
@@ -297,9 +268,8 @@ function drawLamp(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: 
   return { eyeY: shadeY + shadeH * 0.04, eyeGapX: shadeW * 0.16, eyeR: shadeH * 0.26, mouthY: shadeY + shadeH * 0.38, mouthR: shadeW * 0.15 };
 }
 
-function drawVase(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawVase(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   gradientBody(g, accent);
   g.fillEllipse(0, -s * 0.22, s * 0.3, s * 0.28);
   g.fillEllipse(0, s * 0.06, s * 0.66, s * 0.56);
@@ -314,9 +284,8 @@ function drawVase(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: 
   return { eyeY: s * 0.0, eyeGapX: s * 0.15, eyeR: s * 0.1, mouthY: s * 0.2, mouthR: s * 0.12 };
 }
 
-function drawPlate(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawPlate(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   gradientBody(g, accent);
   g.fillEllipse(0, 0, s * 1.3, s * 0.62);
   contour(g, accent);
@@ -329,9 +298,8 @@ function drawPlate(g: Phaser.GameObjects.Graphics, w: number, h: number, accent:
   return { eyeY: -s * 0.02, eyeGapX: s * 0.14, eyeR: s * 0.09, mouthY: s * 0.12, mouthR: s * 0.12 };
 }
 
-function drawFrame(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawFrame(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const fw = s * 1.1;
   const fh = s * 0.86;
   gradientBody(g, accent);
@@ -349,9 +317,8 @@ function drawFrame(g: Phaser.GameObjects.Graphics, w: number, h: number, accent:
   return { eyeY: ih * 0.02 - iw * 0.06, eyeGapX: iw * 0.09, eyeR: iw * 0.055, mouthY: ih * 0.02 + iw * 0.08, mouthR: iw * 0.09 };
 }
 
-function drawClock(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
+function drawClock(g: GraphicsLike, _w: number, h: number, accent: string): FaceSpec {
   const s = h;
-  shadowBase(g, w, h);
   const r = s * 0.46;
   gradientBody(g, accent);
   g.fillCircle(0, 0, r);
@@ -384,11 +351,126 @@ const DRAWERS: Record<string, Drawer> = {
   clock: drawClock,
 };
 
-function drawFallback(g: Phaser.GameObjects.Graphics, w: number, h: number, accent: string): FaceSpec {
-  shadowBase(g, w, h);
+function drawFallback(g: GraphicsLike, w: number, h: number, accent: string): FaceSpec {
   gradientBody(g, accent);
   g.fillRoundedRect(-w * 0.35, -h * 0.35, w * 0.7, h * 0.7, 6);
   return { eyeY: -h * 0.06, eyeGapX: w * 0.14, eyeR: h * 0.12, mouthY: h * 0.12, mouthR: w * 0.14 };
+}
+
+/** "Gizemli eşya" engeli: kabın en üstünde olmayan eşyalar yüzü kapalı bir "?" kart olarak çizilir. */
+export const MYSTERY_TYPE = '__mystery__';
+
+function drawMystery(g: GraphicsLike, w: number, h: number): void {
+  const bodyW = Math.min(w * 0.64, h * 1.25);
+  const bodyH = h * 0.72;
+  g.fillGradientStyle(shade(COLORS.lavender, 0.35), shade(COLORS.lavender, 0.35), shade(COLORS.lavender, -0.12), shade(COLORS.lavender, -0.12), 1, 1, 1, 1);
+  g.fillRoundedRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH, 10);
+  g.lineStyle(1.6, shade(COLORS.lavender, -0.35), 0.55);
+  g.strokeRoundedRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH, 10);
+  // noktalı iç çerçeve: "örtülü/kapalı" hissi
+  g.fillStyle(0xffffff, 0.75);
+  const inset = 7;
+  for (let i = 0; i < 5; i++) {
+    const tt = i / 4;
+    const ex = -bodyW / 2 + inset + tt * (bodyW - inset * 2);
+    g.fillCircle(ex, -bodyH / 2 + inset, 1.4);
+    g.fillCircle(ex, bodyH / 2 - inset, 1.4);
+  }
+}
+
+/** Pişirme alanı: bazı siluetler (vazo dalları, buhar) yuvanın biraz dışına taşar -- kırpılmasın diye pay. */
+const BAKE_PAD_X = 1.2;
+const BAKE_PAD_Y = 1.5;
+
+function bakeKey(kind: string, type: string, w: number, h: number): string {
+  return `item-${kind}-${type}-${Math.round(w)}x${Math.round(h)}`;
+}
+
+/** Bulanık temas gölgesi: "ekran dışında çiz, gölgesini içeri kaydır" hilesi (shadowBlur her tarayıcıda çalışır). */
+function contactShadow(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  ctx.save();
+  const far = 10000;
+  const scale = ctx.getTransform().a;
+  ctx.shadowColor = 'rgba(90,58,44,0.45)';
+  ctx.shadowBlur = Math.max(3, h * 0.12) * scale;
+  ctx.shadowOffsetX = far * scale;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(-far, 0, w * 0.27, h * 0.085, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Tüm türlere ortak ışık: yalnızca çizilmiş piksellere (source-atop) üst aydınlık + alt sıcak gölge + sol-üst parıltı. */
+function lightPass(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-atop';
+  const vertical = ctx.createLinearGradient(0, -h * 0.6, 0, h * 0.6);
+  vertical.addColorStop(0, 'rgba(255,255,255,0.22)');
+  vertical.addColorStop(0.45, 'rgba(255,255,255,0)');
+  vertical.addColorStop(1, 'rgba(70,40,30,0.2)');
+  ctx.fillStyle = vertical;
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+  const sheen = ctx.createRadialGradient(-w * 0.16, -h * 0.28, 0, -w * 0.16, -h * 0.28, h * 0.55);
+  sheen.addColorStop(0, 'rgba(255,255,255,0.28)');
+  sheen.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+  ctx.restore();
+}
+
+interface BakedItem {
+  readonly body: string;
+  readonly face: Record<'open' | 'closed' | 'excited', string> | null;
+  readonly shadow: string;
+  readonly width: number;
+  readonly height: number;
+  readonly shadowSize: { readonly width: number; readonly height: number };
+}
+
+/** Hiçbir şey çizmeyen GraphicsLike -- yalnızca bir çizimin döndürdüğü FaceSpec'i (sayılar) almak için. */
+const NULL_GRAPHICS: GraphicsLike = new Proxy({} as GraphicsLike, {
+  get: () => () => NULL_GRAPHICS,
+});
+
+/** Eşyanın "ayak" noktası (temas gölgesi + ezilme/esneme ekseni) -- yuva merkezinden aşağı, h oranı. */
+export const ITEM_FOOT = 0.4;
+
+/** Bir türün gövde + 3 yüz durumunu + temas gölgesini (gerekirse) pişirir; pişmişse yalnızca anahtarları döndürür. */
+export function bakeItem(scene: Phaser.Scene, type: ItemType, w: number, h: number): BakedItem {
+  const size = { width: w * BAKE_PAD_X, height: h * BAKE_PAD_Y };
+  const shadowSize = { width: w * 0.8, height: h * 0.45 };
+  const shadow = bakeCentered(scene, bakeKey('shadow', 'any', w, h), shadowSize, (_g, ctx) => contactShadow(ctx, w, h));
+  const accent = accentFor(type);
+  const drawer = DRAWERS[type] ?? drawFallback;
+
+  if (type === MYSTERY_TYPE) {
+    const body = bakeCentered(scene, bakeKey('body', type, w, h), size, (g, ctx) => {
+      drawMystery(g, w, h);
+      lightPass(ctx, w, h);
+      ctx.save();
+      ctx.font = `900 ${Math.round(h * 0.46)}px ${FONT_FAMILY}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = COLORS.ink;
+      ctx.fillText('?', 0, h * 0.03);
+      ctx.restore();
+    });
+    return { body, face: null, shadow, shadowSize, ...size };
+  }
+
+  const body = bakeCentered(scene, bakeKey('body', type, w, h), size, (g, ctx) => {
+    drawer(g, w, h, accent);
+    lightPass(ctx, w, h);
+  });
+  // Yüz geometrisi yalnızca sayılardan oluşur -- çizimi boş bir hedefe "kuru" çalıştırarak alınır.
+  const spec = drawer(NULL_GRAPHICS, w, h, accent);
+  const face = {
+    open: bakeCentered(scene, bakeKey('face-open', type, w, h), size, (g) => drawFace(g, spec, 'open', false)),
+    closed: bakeCentered(scene, bakeKey('face-closed', type, w, h), size, (g) => drawFace(g, spec, 'closed', false)),
+    excited: bakeCentered(scene, bakeKey('face-excited', type, w, h), size, (g) => drawFace(g, spec, 'open', true)),
+  };
+  return { body, face, shadow, shadowSize, ...size };
 }
 
 export interface ItemVisual {
@@ -397,21 +479,75 @@ export interface ItemVisual {
 }
 
 /**
- * Verilen türün siluetini + yüzünü (w x h kutusuna ortalanmış) bir Container üzerine çizer.
- * Gövde statik bir Graphics'te, yüz ayrı (redrawable) bir Graphics'te -- göz kırpma/heyecan
- * durumları gövdeyi yeniden çizmeden, yalnızca yüz katmanını güncelleyerek ucuza uygulanabilir.
+ * Eşya görseli yapısı (dışarıdan bakınca tek Container, orijin = yuva merkezi):
+ *   container
+ *     ├─ shadow  (Image, rafta "ayak" noktasında -- eşya kalkınca küçülür/solar, inince yayılır)
+ *     └─ sprite  (Container, ORİJİNİ AYAK noktasında -- ezilme/esneme tabana göre olur)
+ *          ├─ body (Image)
+ *          └─ face (Image, 3 pişmiş durum)
+ * `container.getData('sprite')` ve `getData('shadow')` animasyonlar için dışa açıktır.
  */
 export function createItemVisual(scene: Phaser.Scene, type: ItemType, w: number, h: number): ItemVisual {
+  const baked = bakeItem(scene, type, w, h);
+  const foot = h * ITEM_FOOT;
   const container = scene.add.container(0, 0);
-  const body = scene.add.graphics();
-  container.add(body);
-  const accent = accentFor(type);
-  const drawer = DRAWERS[type] ?? drawFallback;
-  const spec = drawer(body, w, h, accent);
-  const face = attachFace(scene, container, spec);
+  const shadow = scene.add.image(0, foot, baked.shadow).setDisplaySize(baked.shadowSize.width, baked.shadowSize.height);
+  const sprite = scene.add.container(0, foot);
+  const body = scene.add.image(0, -foot, baked.body).setDisplaySize(baked.width, baked.height);
+  sprite.add(body);
+  let faceImage: Phaser.GameObjects.Image | null = null;
+  if (baked.face) {
+    faceImage = scene.add.image(0, -foot, baked.face.open).setDisplaySize(baked.width, baked.height);
+    sprite.add(faceImage);
+  }
+  container.add([shadow, sprite]);
+
+  let eyeState: EyeState = 'open';
+  let excited = false;
+  const sync = () => {
+    if (!faceImage || !baked.face) return;
+    faceImage.setTexture(eyeState === 'closed' ? baked.face.closed : excited ? baked.face.excited : baked.face.open);
+    faceImage.setDisplaySize(baked.width, baked.height);
+  };
+  const face: FaceController = {
+    setEyeState(state: EyeState) {
+      if (eyeState === state) return;
+      eyeState = state;
+      sync();
+    },
+    setExcited(value: boolean) {
+      if (excited === value) return;
+      excited = value;
+      sync();
+    },
+  };
+  container.setData('itemType', type);
+  container.setData('sprite', sprite);
+  container.setData('shadow', shadow);
+  container.setData('foot', foot);
+  container.setData('shadowScaleX', shadow.scaleX);
+  container.setData('shadowScaleY', shadow.scaleY);
   container.setData('setEyeState', face.setEyeState);
   container.setData('setExcited', face.setExcited);
   return { container, face };
+}
+
+/** Bir eşya görselini dinlenme pozuna döndürür (havuzdan yeniden kullanılırken / animasyon iptalinde). */
+export function resetItemVisual(container: Phaser.GameObjects.Container): void {
+  const sprite = container.getData('sprite') as Phaser.GameObjects.Container | undefined;
+  const shadow = container.getData('shadow') as Phaser.GameObjects.Image | undefined;
+  const scene = container.scene;
+  container.setScale(1).setAlpha(1).setAngle(0);
+  if (sprite) {
+    scene.tweens.killTweensOf(sprite);
+    sprite.setPosition(0, container.getData('foot') as number).setScale(1).setAngle(0);
+  }
+  if (shadow) {
+    scene.tweens.killTweensOf(shadow);
+    shadow.setScale(container.getData('shadowScaleX') as number, container.getData('shadowScaleY') as number).setAlpha(1);
+  }
+  (container.getData('setExcited') as ((v: boolean) => void) | undefined)?.(false);
+  (container.getData('setEyeState') as ((s: EyeState) => void) | undefined)?.('open');
 }
 
 /** Geriye dönük uyumluluk: yalnızca Container isteyen eski çağrı yerleri için. */
