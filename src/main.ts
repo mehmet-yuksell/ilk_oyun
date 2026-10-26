@@ -5,37 +5,45 @@ import { SplashScene } from './scenes/SplashScene';
 import { RoomScene } from './scenes/RoomScene';
 import { GameScene } from './scenes/GameScene';
 import { SettingsScene } from './scenes/SettingsScene';
+import { installPhaserDefaults } from './scenes/phaserDefaults';
+import { loadFonts } from './scenes/fonts';
+import { installResizeHandler, physicalSize, renderScale } from './scenes/viewport';
 import { ConsoleAnalyticsService } from './services/AnalyticsService';
 import { restoreFromPreferencesIfMissing } from './services/SaveService';
 
 async function boot(): Promise<void> {
-  // Fredoka, Phaser.Game oluşturulmadan ÖNCE yüklenmeli: Phaser Text nesneleri, oluşturuldukları
-  // anda tarayıcının o anki fontuyla bir canvas dokusuna "pişer" -- font sonradan yüklenirse
-  // (ör. @font-face async), zaten çizilmiş metinler otomatik güncellenmez, yedek fontla kalır.
+  // Nunito, Phaser.Game oluşturulmadan ÖNCE yüklenmeli (bkz. scenes/fonts.ts).
   try {
-    await Promise.all([document.fonts.load('400 16px Fredoka'), document.fonts.load('700 16px Fredoka')]);
+    await loadFonts();
   } catch {
     // Font yüklenemezse (ör. eski tarayıcı) CSS zaten sans-serif yedeğine düşer.
   }
+  installPhaserDefaults();
 
   // İlk sahne (RoomScene) localStorage'ı SENKRON okuyacağı için, native Preferences'taki olası
   // bir yedek varsa Phaser.Game oluşturulmadan ÖNCE localStorage'a kopyalanmalı (bkz. SaveService.ts).
   await restoreFromPreferencesIfMissing(window.localStorage);
 
+  const initial = physicalSize();
   const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
     parent: 'app',
-    backgroundColor: '#fbf3e7',
+    backgroundColor: '#FDEBDC',
     banner: false,
     disableContextMenu: true,
-    // Mantıksal çözünürlük sabit 540x960 tutulur; devicePixelRatio'yu çarpan olarak
-    // kullanmıyoruz -- yüksek DPR'li telefonlarda (3x gibi) WebGL framebuffer'ını
-    // gereksiz yere büyütüp düşük donanımda FPS'i ciddi düşürmemek için.
+    // Canvas = pencere CSS boyutu x renderScale (DPR, en fazla 2) -- kenardan kenara, keskin.
+    // Sahneler mantıksal (kısa kenar 540) koordinatlarda çalışır, kamera zoom'u dönüştürür
+    // (bkz. scenes/viewport.ts). Scale.NONE: boyutu biz yönetiriz (installResizeHandler).
     scale: {
-      mode: Phaser.Scale.FIT,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-      width: 540,
-      height: 960,
+      mode: Phaser.Scale.NONE,
+      width: initial.width,
+      height: initial.height,
+      zoom: 1 / renderScale(),
+    },
+    render: {
+      antialias: true,
+      roundPixels: false,
+      powerPreference: 'high-performance',
     },
     fps: {
       target: 60,
@@ -47,6 +55,7 @@ async function boot(): Promise<void> {
   new ConsoleAnalyticsService().track({ name: 'session_start' });
 
   const game = new Phaser.Game(config);
+  installResizeHandler(game);
 
   // Yalnızca geliştirme sunucusunda: Playwright ekran görüntüsü betiği (scripts/screenshots.mjs)
   // sahnelere bu kanca üzerinden ulaşır. Production build'de import.meta.env.DEV=false olduğu

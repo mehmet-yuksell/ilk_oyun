@@ -127,9 +127,11 @@ if (want('game') || want('win')) {
       const scene = window.__cozy.scene.getScene('GameScene');
       const c = scene.gameState.containers.find((x) => x.items.length > 0);
       const l = scene.layouts.get(c.id);
-      const canvas = window.__cozy.canvas.getBoundingClientRect();
-      const k = canvas.width / 540;
-      return { x: canvas.left + l.centerX * k, y: canvas.top + (l.topY + l.rect.height - 30) * k };
+      const rect = window.__cozy.canvas.getBoundingClientRect();
+      const cam = scene.cameras.main;
+      const k = rect.width / window.__cozy.scale.width;
+      const toScreen = (wx, wy) => ({ x: rect.left + (wx - cam.scrollX) * cam.zoom * k, y: rect.top + (wy - cam.scrollY) * cam.zoom * k });
+      return toScreen(l.centerX, l.topY + l.rect.height - 30);
     });
     await page.mouse.click(pt.x, pt.y);
     await wait(450);

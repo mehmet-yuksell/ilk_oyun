@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { JUICE } from '../config/tuning';
-import { COLORS, RADIUS, TYPE_SCALE, hexToNum, shade } from './theme';
+import { COLORS, FONT_FAMILY, RADIUS, TYPE_SCALE, hexToNum, shade } from './theme';
+import { viewOf } from './viewport';
 import { starPoints } from './gameHud';
 import { t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
@@ -21,14 +22,14 @@ export interface LevelCompletePanelParams {
 export function showLevelCompletePanel(scene: Phaser.Scene, params: LevelCompletePanelParams): void {
   const { rating, awarded, isDailyPuzzle, lang, confetti, prefersReducedMotion, onNext } = params;
   const reduced = prefersReducedMotion();
-  confetti.burst(scene.scale.width, scene.scale.height, reduced);
+  confetti.burst(viewOf(scene).width, viewOf(scene).height, reduced);
 
-  const overlay = scene.add.rectangle(0, 0, scene.scale.width, scene.scale.height, 0x241437, 0).setOrigin(0, 0).setDepth(300);
+  const overlay = scene.add.rectangle(0, 0, viewOf(scene).width, viewOf(scene).height, hexToNum(COLORS.overlay), 0).setOrigin(0, 0).setDepth(300);
   scene.tweens.add({ targets: overlay, fillAlpha: 0.5, duration: 220 });
 
-  const panelW = Math.min(scene.scale.width - 56, 340);
+  const panelW = Math.min(viewOf(scene).width - 56, 340);
   const panelH = 380;
-  const panel = scene.add.container(scene.scale.width / 2, scene.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
+  const panel = scene.add.container(viewOf(scene).width / 2, viewOf(scene).height / 2).setDepth(301).setScale(0.85).setAlpha(0);
 
   const bg = scene.add.graphics();
   bg.fillStyle(hexToNum(COLORS.surface), 1);
@@ -41,9 +42,9 @@ export function showLevelCompletePanel(scene: Phaser.Scene, params: LevelComplet
   panel.add(
     scene.add
       .text(0, -panelH / 2 + 40, t(titleKey, lang), {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: `${TYPE_SCALE.panelTitle}px`,
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.ink,
       })
       .setOrigin(0.5),
@@ -76,7 +77,7 @@ export function showLevelCompletePanel(scene: Phaser.Scene, params: LevelComplet
 
   const counterProxy = { n: 0 };
   const counterText = scene.add
-    .text(-16, counterY, '+0', { fontFamily: 'Fredoka, sans-serif', fontSize: '22px', fontStyle: '600', color: COLORS.ink })
+    .text(-16, counterY, '+0', { fontFamily: FONT_FAMILY, fontSize: '22px', fontStyle: '800', color: COLORS.ink })
     .setOrigin(0, 0.5);
   panel.add(counterText);
   scene.tweens.add({
@@ -101,14 +102,14 @@ export function showLevelCompletePanel(scene: Phaser.Scene, params: LevelComplet
   panel.add(
     scene.add
       .text(0, btnY, t('nextLevelButton', lang), {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: '19px',
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.cream,
       })
       .setOrigin(0.5),
   );
-  const btnZone = scene.add.zone(scene.scale.width / 2, scene.scale.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
+  const btnZone = scene.add.zone(viewOf(scene).width / 2, viewOf(scene).height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
   btnZone.on('pointerup', () => {
     overlay.destroy();
     panel.destroy();
@@ -132,12 +133,12 @@ const MIN_TOUCH_TARGET = 48;
  * "Tekrar Dene" (aynı seviyeyi yeniden başlatır) + çerçeveli ikincil "Odaya Dön" butonu. */
 export function showLevelLostPanel(scene: Phaser.Scene, params: LevelLostPanelParams): void {
   const { moveLimit, lang, onRetry, onBackToRoom } = params;
-  const overlay = scene.add.rectangle(0, 0, scene.scale.width, scene.scale.height, 0x1a1020, 0).setOrigin(0, 0).setDepth(300);
+  const overlay = scene.add.rectangle(0, 0, viewOf(scene).width, viewOf(scene).height, hexToNum(COLORS.overlay), 0).setOrigin(0, 0).setDepth(300);
   scene.tweens.add({ targets: overlay, fillAlpha: 0.6, duration: 220 });
 
-  const panelW = Math.min(scene.scale.width - 56, 340);
+  const panelW = Math.min(viewOf(scene).width - 56, 340);
   const panelH = 380;
-  const panel = scene.add.container(scene.scale.width / 2, scene.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
+  const panel = scene.add.container(viewOf(scene).width / 2, viewOf(scene).height / 2).setDepth(301).setScale(0.85).setAlpha(0);
 
   const bg = scene.add.graphics();
   bg.fillStyle(hexToNum(COLORS.surface), 1);
@@ -160,9 +161,9 @@ export function showLevelLostPanel(scene: Phaser.Scene, params: LevelLostPanelPa
   panel.add(
     scene.add
       .text(0, bannerY + 1, t('levelLostTitle', lang), {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: `${TYPE_SCALE.sectionTitle}px`,
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.ink,
       })
       .setOrigin(0.5),
@@ -171,7 +172,7 @@ export function showLevelLostPanel(scene: Phaser.Scene, params: LevelLostPanelPa
   panel.add(
     scene.add
       .text(0, bannerY + 70, t('levelLostBody', lang, { limit: moveLimit }), {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: '14px',
         color: COLORS.inkSoft,
         align: 'center',
@@ -194,15 +195,15 @@ export function showLevelLostPanel(scene: Phaser.Scene, params: LevelLostPanelPa
   panel.add(
     scene.add
       .text(0, primaryY, t('retryButton', lang), {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: '19px',
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.cream,
       })
       .setOrigin(0.5),
   );
   const retryZone = scene.add
-    .zone(scene.scale.width / 2, scene.scale.height / 2 + primaryY, btnW, primaryBtnH)
+    .zone(viewOf(scene).width / 2, viewOf(scene).height / 2 + primaryY, btnW, primaryBtnH)
     .setInteractive({ useHandCursor: true });
   retryZone.on('pointerup', () => {
     overlay.destroy();
@@ -221,15 +222,15 @@ export function showLevelLostPanel(scene: Phaser.Scene, params: LevelLostPanelPa
   panel.add(
     scene.add
       .text(0, secondaryY, t('backToRoomButton', lang), {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: '15px',
         color: COLORS.inkSoft,
-        fontStyle: '600',
+        fontStyle: '800',
       })
       .setOrigin(0.5),
   );
   const backZone = scene.add
-    .zone(scene.scale.width / 2, scene.scale.height / 2 + secondaryY, btnW, Math.max(MIN_TOUCH_TARGET, secondaryBtnH))
+    .zone(viewOf(scene).width / 2, viewOf(scene).height / 2 + secondaryY, btnW, Math.max(MIN_TOUCH_TARGET, secondaryBtnH))
     .setInteractive({ useHandCursor: true });
   backZone.on('pointerup', () => {
     overlay.destroy();

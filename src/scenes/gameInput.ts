@@ -1,4 +1,8 @@
-import type Phaser from 'phaser';
+/** Mantıksal sahne koordinatındaki bir dokunuş noktası (GameScene, ekran pikselinden çevirip verir). */
+export interface PointerPoint {
+  readonly x: number;
+  readonly y: number;
+}
 
 const DRAG_THRESHOLD = 8;
 
@@ -53,7 +57,7 @@ export class GameInputController {
     this.dragging = false;
   }
 
-  onPointerDown(pointer: Phaser.Input.Pointer): void {
+  onPointerDown(pointer: PointerPoint): void {
     this.host.cancelTutorial();
     if (this.host.isAnimating()) return;
     const id = this.host.findContainerAt(pointer.x, pointer.y);
@@ -69,7 +73,7 @@ export class GameInputController {
     this.dragging = false;
   }
 
-  onPointerMove(pointer: Phaser.Input.Pointer): void {
+  onPointerMove(pointer: PointerPoint): void {
     if (this.host.isAnimating() || !this.activePointerId) return;
     const dx = pointer.x - this.dragStartX;
     const dy = pointer.y - this.dragStartY;
@@ -81,7 +85,7 @@ export class GameInputController {
     }
   }
 
-  onPointerUp(pointer: Phaser.Input.Pointer): void {
+  onPointerUp(pointer: PointerPoint): void {
     if (this.host.isAnimating()) return;
     const pressedId = this.activePointerId;
     const wasDragging = this.dragging;

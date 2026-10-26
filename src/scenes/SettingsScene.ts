@@ -1,16 +1,17 @@
 import Phaser from 'phaser';
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
-import { COLORS, RADIUS, TYPE_SCALE, hexToNum, shade } from './theme';
+import { COLORS, DEFAULT_THEME, FONT_FAMILY, RADIUS, TYPE_SCALE, hexToNum } from './theme';
+import { BASE_HEIGHT, BASE_WIDTH, setupView, type View } from './viewport';
+import { drawCozyBackground } from './background';
 import { readSafeAreaInsets } from './safeArea';
-import { syncBodyBackground } from './bodyBackground';
 import { t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
 
 const ROW_X = 40;
 const ROW_WIDTH = 460;
-const FONT = 'Fredoka, sans-serif';
 
 export class SettingsScene extends Phaser.Scene {
+  private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
 
   private saveData!: SaveData;
@@ -20,17 +21,18 @@ export class SettingsScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.vp = setupView(this);
     this.saveData = this.saveService.load();
     const lang: Language = this.saveData.language;
-    const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
+    const insets = readSafeAreaInsets(this);
 
     this.drawBackground();
 
     this.add
-      .text(this.scale.width / 2, insets.top + 34, t('settingsTitle', lang), {
-        fontFamily: FONT,
+      .text(this.vp.width / 2, insets.top + 34, t('settingsTitle', lang), {
+        fontFamily: FONT_FAMILY,
         fontSize: `${TYPE_SCALE.screenTitle}px`,
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.ink,
       })
       .setOrigin(0.5);
@@ -40,7 +42,7 @@ export class SettingsScene extends Phaser.Scene {
     // kalıyordu (bkz. Faz 8 kararları). Kart hem görsel yapı katıyor hem de "Kapat" butonunu
     // ekranın en altına sabitlemek yerine içeriğin hemen altına taşımayı mümkün kılıyor.
     const rowsTop = insets.top + 90;
-    const cardX = this.scale.width / 2 - (ROW_WIDTH + 40) / 2;
+    const cardX = this.vp.width / 2 - (ROW_WIDTH + 40) / 2;
     const cardY = rowsTop - 30;
     const cardW = ROW_WIDTH + 40;
     const cardH = 172;
@@ -61,7 +63,7 @@ export class SettingsScene extends Phaser.Scene {
       this.persistAndRefresh();
     });
 
-    this.createButton(this.scale.width / 2, cardY + cardH + 56, t('closeButton', lang), () => {
+    this.createButton(this.vp.width / 2, cardY + cardH + 56, t('closeButton', lang), () => {
       this.scene.start('RoomScene');
     });
   }
@@ -72,16 +74,11 @@ export class SettingsScene extends Phaser.Scene {
   }
 
   private drawBackground(): void {
-    const w = this.scale.width;
-    const h = this.scale.height;
-    syncBodyBackground(COLORS.bgTop, COLORS.bgBottom);
-    const g = this.add.graphics();
-    g.fillGradientStyle(hexToNum(COLORS.bgTop), hexToNum(COLORS.bgTop), shade(COLORS.bgBottom, 0.1), shade(COLORS.bgBottom, 0.1), 1, 1, 1, 1);
-    g.fillRect(0, 0, w, h);
+    drawCozyBackground(this, DEFAULT_THEME, this.vp, { motes: 8 });
   }
 
   private addLanguageRow(y: number, lang: Language): number {
-    this.add.text(ROW_X, y, t('languageLabel', lang), { fontFamily: FONT, fontSize: '16px', color: COLORS.ink });
+    this.add.text(ROW_X, y, t('languageLabel', lang), { fontFamily: FONT_FAMILY, fontSize: '16px', color: COLORS.ink });
 
     const trX = ROW_X + ROW_WIDTH - 150;
     const enX = ROW_X + ROW_WIDTH - 70;
@@ -98,7 +95,7 @@ export class SettingsScene extends Phaser.Scene {
 
   private addToggleRow(y: number, label: string, value: boolean, onChange: (value: boolean) => void): number {
     const lang = this.saveData.language;
-    this.add.text(ROW_X, y, label, { fontFamily: FONT, fontSize: '16px', color: COLORS.ink });
+    this.add.text(ROW_X, y, label, { fontFamily: FONT_FAMILY, fontSize: '16px', color: COLORS.ink });
 
     const onX = ROW_X + ROW_WIDTH - 150;
     const offX = ROW_X + ROW_WIDTH - 70;
@@ -117,7 +114,7 @@ export class SettingsScene extends Phaser.Scene {
 
     this.add
       .text(x, y, label, {
-        fontFamily: FONT,
+        fontFamily: FONT_FAMILY,
         fontSize: '13px',
         color: active ? COLORS.cream : COLORS.inkSoft,
       })
@@ -135,7 +132,7 @@ export class SettingsScene extends Phaser.Scene {
     bg.fillRoundedRect(x - w / 2, y - h / 2, w, h, 14);
 
     this.add
-      .text(x, y, label, { fontFamily: FONT, fontSize: '17px', fontStyle: '600', color: COLORS.cream })
+      .text(x, y, label, { fontFamily: FONT_FAMILY, fontSize: '17px', fontStyle: '800', color: COLORS.cream })
       .setOrigin(0.5);
 
     const zone = this.add.zone(x, y, w, h).setInteractive({ useHandCursor: true });

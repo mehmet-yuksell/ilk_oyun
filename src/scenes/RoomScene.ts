@@ -10,9 +10,10 @@ import { getDebugLevelParam } from './debugLevelParam';
 import { colorForItemIndex } from './roomVisuals';
 import { drawRoomIcon, iconKeyForLabel, ICON_DEPTH, type RoomIconKey } from './roomItemArt';
 import { readSafeAreaInsets } from './safeArea';
-import { syncBodyBackground } from './bodyBackground';
 import { fadeToScene } from './sceneTransition';
-import { COLORS, RADIUS, TYPE_SCALE, hexToNum, shade } from './theme';
+import { COLORS, FONT_FAMILY, RADIUS, TYPE_SCALE, hexToNum } from './theme';
+import { BASE_HEIGHT, BASE_WIDTH, setupView, type View } from './viewport';
+import { drawCozyBackground } from './background';
 import { themeForLevel } from '../config/tuning';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { t } from '../i18n/translations';
@@ -54,6 +55,7 @@ interface PlacedItem {
 }
 
 export class RoomScene extends Phaser.Scene {
+  private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
   private readonly hapticService: HapticService = new WebVibrationHapticService();
   private readonly soundService: SoundService = new WebAudioSoundService();
@@ -79,6 +81,7 @@ export class RoomScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.vp = setupView(this);
     const debugLevel = getDebugLevelParam();
     if (debugLevel !== null) {
       this.scene.start('GameScene');
@@ -95,51 +98,51 @@ export class RoomScene extends Phaser.Scene {
     this.confetti = new ConfettiEmitter(this, 210);
     this.cameras.main.fadeIn(220);
 
-    const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
+    const insets = readSafeAreaInsets(this);
     this.safeTop = insets.top;
     this.safeBottom = insets.bottom;
 
     this.drawBackground();
 
     this.add
-      .text(this.scale.width / 2, this.safeTop + 30, this.room.name, {
-        fontFamily: 'Fredoka, sans-serif',
+      .text(this.vp.width / 2, this.safeTop + 30, this.room.name, {
+        fontFamily: FONT_FAMILY,
         fontSize: `${TYPE_SCALE.screenTitle}px`,
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.ink,
       })
       .setOrigin(0.5);
 
     this.add
       .text(
-        this.scale.width / 2,
+        this.vp.width / 2,
         this.safeTop + 58,
         t('roomCounterLabel', this.lang, { current: this.saveData.currentRoomIndex + 1, total: ROOMS.length }),
-        { fontFamily: 'Fredoka, sans-serif', fontSize: `${TYPE_SCALE.hudCounter}px`, fontStyle: '600', color: COLORS.inkSoft },
+        { fontFamily: FONT_FAMILY, fontSize: `${TYPE_SCALE.hudCounter}px`, fontStyle: '800', color: COLORS.inkSoft },
       )
       .setOrigin(0.5);
 
     this.starText = this.add
-      .text(this.scale.width - insets.right - 44, this.safeTop + 14, '', {
-        fontFamily: 'Fredoka, sans-serif',
+      .text(this.vp.width - insets.right - 44, this.safeTop + 14, '', {
+        fontFamily: FONT_FAMILY,
         fontSize: '17px',
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.ink,
       })
       .setOrigin(1, 0);
-    this.drawStarGlyph(this.scale.width - insets.right - 18, this.safeTop + 22, 8);
+    this.drawStarGlyph(this.vp.width - insets.right - 18, this.safeTop + 22, 8);
 
-    this.createSettingsButton(this.scale.width - insets.right - 18, this.safeTop + 54);
+    this.createSettingsButton(this.vp.width - insets.right - 18, this.safeTop + 54);
 
     this.dailyRewardButton = this.createSmallButton(
-      this.scale.width / 2 - 95,
+      this.vp.width / 2 - 95,
       this.safeTop + 96,
       170,
       36,
       t('dailyRewardButton', this.lang),
       () => this.onClaimDailyReward(),
     );
-    this.createSmallButton(this.scale.width / 2 + 95, this.safeTop + 96, 170, 36, t('dailyPuzzleButton', this.lang), () => {
+    this.createSmallButton(this.vp.width / 2 + 95, this.safeTop + 96, 170, 36, t('dailyPuzzleButton', this.lang), () => {
       fadeToScene(this, 'GameScene', { mode: 'daily' });
     });
 
@@ -148,8 +151,8 @@ export class RoomScene extends Phaser.Scene {
     this.itemsLayer = this.add.container(0, 0);
     this.modalLayer = this.add.container(0, 0).setDepth(100);
 
-    const playY = this.scale.height - this.safeBottom - 44;
-    this.createPlayButton(this.scale.width / 2, playY, t('playButton', this.lang), () => {
+    const playY = this.vp.height - this.safeBottom - 44;
+    this.createPlayButton(this.vp.width / 2, playY, t('playButton', this.lang), () => {
       fadeToScene(this, 'GameScene', { mode: 'progress', levelNumber: this.saveData.currentLevel });
     });
 
@@ -174,9 +177,14 @@ export class RoomScene extends Phaser.Scene {
       label: entry.item.label,
       cost: entry.item.cost,
       icon: entry.icon,
-      slot: SLOTS[i] ?? SLOTS[SLOTS.length - 1],
+      slot: this.offsetSlot(SLOTS[i] ?? SLOTS[SLOTS.length - 1]),
       colorIndex: entry.colorIndex,
     }));
+  }
+
+  /** SLOTS 540x960 tabanına göre yazıldı -- daha uzun ekranlarda içerik dikeyde ortalanır. */
+  private offsetSlot(slot: Slot): Slot {
+    return { ...slot, y: slot.y + (this.vp.height - BASE_HEIGHT) * 0.5, x: slot.x + (this.vp.width - BASE_WIDTH) * 0.5 };
   }
 
   /** Haptic + ses geri bildirimini tek yerden, ayarlara saygılı biçimde tetikler. */
@@ -214,49 +222,7 @@ export class RoomScene extends Phaser.Scene {
   // ---------------------------------------------------------------------
 
   private drawBackground(): void {
-    const w = this.scale.width;
-    const h = this.scale.height;
-    const wallBottom = h * 0.68;
-    const theme = themeForLevel(this.saveData.currentLevel);
-    syncBodyBackground(theme.bgTop, theme.bgBottom);
-
-    const g = this.add.graphics();
-    g.fillGradientStyle(hexToNum(theme.bgTop), hexToNum(theme.bgTop), shade(theme.bgTop, -0.08), shade(theme.bgTop, -0.08), 1, 1, 1, 1);
-    g.fillRect(0, 0, w, wallBottom);
-    g.fillGradientStyle(
-      hexToNum(theme.bgBottom),
-      hexToNum(theme.bgBottom),
-      shade(theme.bgBottom, -0.2),
-      shade(theme.bgBottom, -0.2),
-      1,
-      1,
-      1,
-      1,
-    );
-    g.fillRect(0, wallBottom, w, h - wallBottom);
-    g.fillStyle(0xffffff, 0.22);
-    g.fillRect(0, wallBottom - 2, w, 3);
-
-    // Pencere: başlık/ilerleme çubuğu ile en üst eşya sırası (SLOTS[0..2]) arasındaki dar banda
-    // sığacak geniş-alçak bir "vasistas" formu -- bu sayede ne üst bilgi çubuğuna ne de
-    // eşyalara binmiyor.
-    const winW = w * 0.42;
-    const winH = 34;
-    const winX = w / 2 - winW / 2;
-    const winY = this.safeTop + 166;
-    g.fillStyle(0xffffff, 0.25);
-    g.fillEllipse(winX + winW / 2, winY + winH / 2, winW * 1.5, winH * 2.2);
-    g.fillStyle(hexToNum(COLORS.sky), 0.25);
-    g.fillRoundedRect(winX, winY, winW, winH, 8);
-    g.lineStyle(3, 0xfff8f0, 0.55);
-    g.strokeRoundedRect(winX, winY, winW, winH, 8);
-    g.lineBetween(winX + winW / 3, winY, winX + winW / 3, winY + winH);
-    g.lineBetween(winX + (winW * 2) / 3, winY, winX + (winW * 2) / 3, winY + winH);
-
-    g.fillStyle(hexToNum(COLORS.ink), 0.04);
-    for (let i = 0; i < 4; i++) {
-      g.fillRect(0, wallBottom + 20 + i * ((h - wallBottom - 30) / 4), w, 1.5);
-    }
+    drawCozyBackground(this, themeForLevel(this.saveData.currentLevel), this.vp, { floorAt: 0.68, motes: 12 });
   }
 
   private drawStarGlyph(x: number, y: number, r: number): void {
@@ -296,8 +262,8 @@ export class RoomScene extends Phaser.Scene {
   }
 
   private drawProgressBar(y: number): void {
-    const barW = this.scale.width - 80;
-    const barX = this.scale.width / 2 - barW / 2;
+    const barW = this.vp.width - 80;
+    const barX = this.vp.width / 2 - barW / 2;
     const bg = this.add.graphics();
     bg.fillStyle(hexToNum(COLORS.surface), 0.6);
     bg.fillRoundedRect(barX, y, barW, 10, 5);
@@ -307,7 +273,7 @@ export class RoomScene extends Phaser.Scene {
     this.progressBarFill.setData('w', barW);
 
     this.progressLabel = this.add
-      .text(this.scale.width / 2, y + 20, '', { fontFamily: 'Fredoka, sans-serif', fontSize: `${TYPE_SCALE.body}px`, color: COLORS.inkSoft })
+      .text(this.vp.width / 2, y + 20, '', { fontFamily: FONT_FAMILY, fontSize: `${TYPE_SCALE.body}px`, color: COLORS.inkSoft })
       .setOrigin(0.5);
   }
 
@@ -366,7 +332,7 @@ export class RoomScene extends Phaser.Scene {
         badge.add(starGlyph);
         badge.add(
           this.add
-            .text(4, 0, `${placed.cost}`, { fontFamily: 'Fredoka, sans-serif', fontSize: '13px', fontStyle: '600', color: COLORS.ink })
+            .text(4, 0, `${placed.cost}`, { fontFamily: FONT_FAMILY, fontSize: '13px', fontStyle: '800', color: COLORS.ink })
             .setOrigin(0, 0.5),
         );
         card.add(badge);
@@ -405,14 +371,14 @@ export class RoomScene extends Phaser.Scene {
   private openStyleModal(placed: PlacedItem): void {
     this.modalLayer.removeAll(true);
 
-    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x2b2320, 0.55).setOrigin(0, 0);
+    const overlay = this.add.rectangle(0, 0, this.vp.width, this.vp.height, hexToNum(COLORS.overlay), 0.55).setOrigin(0, 0);
     overlay.setInteractive();
     this.modalLayer.add(overlay);
 
     const panelW = 320;
     const panelH = 240;
-    const panelX = this.scale.width / 2 - panelW / 2;
-    const panelY = this.scale.height / 2 - panelH / 2;
+    const panelX = this.vp.width / 2 - panelW / 2;
+    const panelY = this.vp.height / 2 - panelH / 2;
 
     const panel = this.add.graphics();
     panel.fillStyle(hexToNum(COLORS.bgTop), 1);
@@ -423,10 +389,10 @@ export class RoomScene extends Phaser.Scene {
 
     this.modalLayer.add(
       this.add
-        .text(this.scale.width / 2, panelY + 32, t('chooseStyleTitle', this.lang, { item: placed.label }), {
-          fontFamily: 'Fredoka, sans-serif',
+        .text(this.vp.width / 2, panelY + 32, t('chooseStyleTitle', this.lang, { item: placed.label }), {
+          fontFamily: FONT_FAMILY,
           fontSize: '16px',
-          fontStyle: '600',
+          fontStyle: '800',
           color: COLORS.ink,
         })
         .setOrigin(0.5),
@@ -438,14 +404,14 @@ export class RoomScene extends Phaser.Scene {
 
     const cancelY = panelY + panelH - 26;
     const cancel = this.add
-      .text(this.scale.width / 2, cancelY, t('cancel', this.lang), {
-        fontFamily: 'Fredoka, sans-serif',
+      .text(this.vp.width / 2, cancelY, t('cancel', this.lang), {
+        fontFamily: FONT_FAMILY,
         fontSize: '13px',
         color: COLORS.inkSoft,
       })
       .setOrigin(0.5);
     this.modalLayer.add(cancel);
-    const cancelZone = this.add.zone(this.scale.width / 2, cancelY, 120, 48).setInteractive({ useHandCursor: true });
+    const cancelZone = this.add.zone(this.vp.width / 2, cancelY, 120, 48).setInteractive({ useHandCursor: true });
     cancelZone.on('pointerup', () => this.modalLayer.removeAll(true));
     this.modalLayer.add(cancelZone);
   }
@@ -472,7 +438,7 @@ export class RoomScene extends Phaser.Scene {
     this.modalLayer.add(iconArt);
 
     const text = this.add
-      .text(x, y + 56, label, { fontFamily: 'Fredoka, sans-serif', fontSize: '12px', color: COLORS.ink })
+      .text(x, y + 56, label, { fontFamily: FONT_FAMILY, fontSize: '12px', color: COLORS.ink })
       .setOrigin(0.5);
     this.modalLayer.add(text);
 
@@ -548,12 +514,12 @@ export class RoomScene extends Phaser.Scene {
 
     this.spawnConfetti();
 
-    const overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x241437, 0).setOrigin(0, 0).setDepth(300);
+    const overlay = this.add.rectangle(0, 0, this.vp.width, this.vp.height, hexToNum(COLORS.overlay), 0).setOrigin(0, 0).setDepth(300);
     this.tweens.add({ targets: overlay, fillAlpha: 0.55, duration: 220 });
 
-    const panelW = Math.min(this.scale.width - 56, 340);
+    const panelW = Math.min(this.vp.width - 56, 340);
     const panelH = 360;
-    const panel = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
+    const panel = this.add.container(this.vp.width / 2, this.vp.height / 2).setDepth(301).setScale(0.85).setAlpha(0);
 
     const bg = this.add.graphics();
     bg.fillStyle(hexToNum(COLORS.surface), 1);
@@ -578,9 +544,9 @@ export class RoomScene extends Phaser.Scene {
     panel.add(
       this.add
         .text(0, starY + 64, title, {
-          fontFamily: 'Fredoka, sans-serif',
+          fontFamily: FONT_FAMILY,
           fontSize: `${TYPE_SCALE.panelTitle}px`,
-          fontStyle: '600',
+          fontStyle: '800',
           color: COLORS.ink,
           align: 'center',
           wordWrap: { width: panelW - 48 },
@@ -590,7 +556,7 @@ export class RoomScene extends Phaser.Scene {
     panel.add(
       this.add
         .text(0, starY + 104, t('roomCompleteSubtitle', this.lang), {
-          fontFamily: 'Fredoka, sans-serif',
+          fontFamily: FONT_FAMILY,
           fontSize: `${TYPE_SCALE.body}px`,
           color: COLORS.inkSoft,
         })
@@ -609,14 +575,14 @@ export class RoomScene extends Phaser.Scene {
     panel.add(
       this.add
         .text(0, btnY, t('continueButton', this.lang), {
-          fontFamily: 'Fredoka, sans-serif',
+          fontFamily: FONT_FAMILY,
           fontSize: '19px',
-          fontStyle: '600',
+          fontStyle: '800',
           color: COLORS.cream,
         })
         .setOrigin(0.5),
     );
-    const btnZone = this.add.zone(this.scale.width / 2, this.scale.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
+    const btnZone = this.add.zone(this.vp.width / 2, this.vp.height / 2 + btnY, btnW, btnH).setInteractive({ useHandCursor: true });
     btnZone.on('pointerup', () => {
       btnZone.destroy();
       const nextIndex = this.saveData.currentRoomIndex + 1;
@@ -631,7 +597,7 @@ export class RoomScene extends Phaser.Scene {
   }
 
   private spawnConfetti(): void {
-    this.confetti.burst(this.scale.width, this.scale.height, prefersReducedMotion());
+    this.confetti.burst(this.vp.width, this.vp.height, prefersReducedMotion());
   }
 
   private onClaimDailyReward(): void {
@@ -648,10 +614,10 @@ export class RoomScene extends Phaser.Scene {
 
   private showFloatingReward(label: string): void {
     const text = this.add
-      .text(this.scale.width / 2, this.safeTop + 112, label, {
-        fontFamily: 'Fredoka, sans-serif',
+      .text(this.vp.width / 2, this.safeTop + 112, label, {
+        fontFamily: FONT_FAMILY,
         fontSize: '16px',
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.coral,
       })
       .setOrigin(0.5);
@@ -668,7 +634,7 @@ export class RoomScene extends Phaser.Scene {
   ): { setEnabled: (v: boolean) => void; setLabel: (s: string) => void } {
     const bg = this.add.graphics();
     const text = this.add
-      .text(x, y, label, { fontFamily: 'Fredoka, sans-serif', fontSize: '13px', fontStyle: '600', color: COLORS.cream })
+      .text(x, y, label, { fontFamily: FONT_FAMILY, fontSize: '13px', fontStyle: '800', color: COLORS.cream })
       .setOrigin(0.5);
     let enabled = true;
 
@@ -707,7 +673,7 @@ export class RoomScene extends Phaser.Scene {
     bg.fillRoundedRect(x - w / 2 + 8, y - h / 2 + 5, w - 16, h * 0.42, h * 0.3);
 
     this.add
-      .text(x, y, label, { fontFamily: 'Fredoka, sans-serif', fontSize: '22px', fontStyle: '600', color: COLORS.cream })
+      .text(x, y, label, { fontFamily: FONT_FAMILY, fontSize: '22px', fontStyle: '800', color: COLORS.cream })
       .setOrigin(0.5);
 
     const zone = this.add.zone(x, y, w, h).setInteractive({ useHandCursor: true });

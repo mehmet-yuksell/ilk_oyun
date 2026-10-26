@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { strokeArc } from './itemVisuals';
-import { COLORS, hexToNum } from './theme';
+import { COLORS, FONT_FAMILY, hexToNum } from './theme';
 import type { Button } from './gameTypes';
 
 const BUTTON_WIDTH = 160;
@@ -88,7 +88,7 @@ export function createButton(
   draw(true);
 
   const text = scene.add
-    .text(x + 10, y, label, { fontFamily: 'Fredoka, sans-serif', fontSize: '15px', fontStyle: '600', color: COLORS.cream })
+    .text(x + 10, y, label, { fontFamily: FONT_FAMILY, fontSize: '15px', fontStyle: '800', color: COLORS.cream })
     .setOrigin(0.5);
 
   const zone = scene.add.zone(x, y, BUTTON_WIDTH, BUTTON_HEIGHT).setInteractive({ useHandCursor: true });

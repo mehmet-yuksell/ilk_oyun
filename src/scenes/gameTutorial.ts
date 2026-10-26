@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { GameState } from '../core/types';
 import { tryMove } from '../core/gameLogic';
 import { JUICE } from '../config/tuning';
-import { hexToNum, shade } from './theme';
+import { COLORS, SHADOW, hexToNum, shade } from './theme';
 import type { Layout } from './gameTypes';
 
 /** GameTutorial'ın sahneden ihtiyaç duyduğu her şey (dar arayüz -- gerçek GameScene bunu
@@ -120,14 +120,14 @@ export class TutorialController {
   private drawHandGlyph(): Phaser.GameObjects.Container {
     const scene = this.host.scene;
     const g = scene.add.graphics();
-    const skin = hexToNum('#F2C49B');
-    g.fillStyle(0x000000, 0.18);
+    const skin = hexToNum(COLORS.skin);
+    g.fillStyle(SHADOW.color, 0.2);
     g.fillEllipse(2, 24, 26, 10);
     g.fillStyle(skin, 1);
     g.fillRoundedRect(-14, -4, 26, 26, 10);
     g.fillRoundedRect(-4, -28, 11, 28, 5);
     g.fillCircle(1.5, -28, 5.5);
-    g.lineStyle(2, shade('#F2C49B', -0.25), 0.6);
+    g.lineStyle(2, shade(COLORS.skin, -0.25), 0.6);
     g.strokeRoundedRect(-14, -4, 26, 26, 10);
     return scene.add.container(0, 0, [g]).setDepth(400);
   }

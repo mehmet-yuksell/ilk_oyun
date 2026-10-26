@@ -89,3 +89,39 @@ seviye 34, seviye 120, kaybetme).
 ### Faz 0 kararları
 - Kanca: `main.ts`'e yalnızca DEV modda `window.__cozy = game` eklendi (prod build'den atılıyor) — ekran görüntüsü betiğinin sahnelere erişmesi için tek yol.
 - Bulanıklık + letterbox (A1, A2) render temeli olduğu için Faz 5 yerine **Faz 1'de** çözülecek — sonraki tüm fazların ekran görüntüleri bunun üzerine kurulu.
+
+---
+
+## FAZ 1 — Tasarım sistemi
+
+**Yapılanlar**
+- `src/scenes/theme.ts` tek tasarım sistemi dosyası oldu: 8 tonlu cozy palet (krem, şeftali, terrakota, bal,
+  adaçayı, lavanta, puslu mavi, gül kurusu) + ahşap tonları + sıcak erik-kahve metin, 10 eşya "boya" rengi,
+  5 oda teması (şeftali sabah, adaçayı bahçe, lavanta akşam, bal öğleden sonra, puslu mavi), tipografi rolleri
+  (`textStyle(role)`), RADIUS / SPACING / katmanlı yumuşak gölge (`drawSoftShadow`) / EASE / DURATION.
+  `config/tuning.ts`'teki renkler buraya taşındı (tuning geriye dönük uyum için yeniden dışa aktarıyor).
+  Dağınık sabitler (karartma `0x241437/0x1a1020/0x2b2320`, ten `#F2C49B`, oda mobilya paleti, ekran/cam tonları) temaya alındı.
+- **Font: Fredoka → Nunito** (OFL, latin + latin-ext woff2, 75 KB; eski Fredoka TTF 159 KB). FontFace API ile
+  Phaser'dan önce yükleniyor (`scenes/fonts.ts`). Yeni test `i18n/fontCoverage.test.ts`: her çeviri karakteri
+  (ğ ş ı İ ö ç ü dahil) font alt kümelerinin unicode aralığında mı — ekran görüntüsünde de doğrulandı ("Titreşim" düzgün).
+- **Render temeli** (`scenes/viewport.ts`): canvas = pencere × DPR (en fazla 2), sahneler mantıksal
+  koordinatta (kısa kenar 540, uzun kenar ekrana göre uzar), kamera zoom'u dönüştürüyor. Sonuç: letterbox
+  bantları yok, yazılar/kenarlar keskin. Metin dokuları kamera zoom'unda pişiyor (`phaserDefaults.ts`).
+  Pencere boyutu değişince kamera yeniden sığdırılıyor (sahne yeniden başlatılmaz → oyun durumu kaybolmaz).
+- **Linear yok**: `ease` verilmeyen her tween artık `Quad.easeOut` alıyor (Phaser varsayılanı `Power0` = doğrusal idi).
+- **Arka plan** (`scenes/background.ts`): duvar degradesi + pencere ışığı + çok silik güneş huzmeleri + sert
+  çizgisiz zemin geçişi + vinyet + deterministik kâğıt dokusu, tema+boyut başına bir kez canvas dokusuna
+  çizilip önbellekleniyor (çalışma anında tek Image). Üstünde 8-12 yavaş süzülen toz zerreciği
+  (`prefers-reduced-motion`'da kapalı).
+
+**Kararlar**
+- Palet: önceki turda "pastel = soluk" diye doygun temalara geçilmişti; bu turun isteği açıkça krem/şeftali/adaçayı/lavanta.
+  Orta yol: ZEMİNLER açık/pastel, EŞYALAR doygun "boya" tonları → kontrast ve okunurluk korunuyor.
+- DPR üst sınırı 2: 3x ekranda framebuffer 2.25 kat büyür; orta seviye Android'de 60 FPS hedefi için 2x yeterince keskin.
+- Aşırı oranlar sınırlandı (9:21'den uzun, 4:5'ten geniş): masaüstü yatay pencerede içerik ortalanır, kenarlar tema rengiyle dolar.
+- Font tanımı CSS yerine TS'te: unicode aralıkları tek kaynakta, test edilebilir; `vite.config.ts`'e (Vercel) dokunmaya gerek kalmadı.
+- Kaynak dosyalar çalışma kopyasında LF'ye çevrildi (depo zaten LF saklıyor, `autocrlf=true` — içerik farkı yok).
+
+**Performans notu**: arka plan tek doku (eskiden her sahnede ~15 Graphics path), zerrecikler 3 tween/adet × 12; sahne
+kapanınca Phaser tween'leri ve nesneleri otomatik temizliyor. Arka plan dokuları tema başına bir kez üretilip `TextureManager`'da kalıyor
+(5 tema × ~2.5 MB üst sınır; pratikte oturum başına 1-2 tema).

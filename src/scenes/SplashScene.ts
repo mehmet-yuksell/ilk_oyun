@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import { COLORS, hexToNum, shade } from './theme';
+import { COLORS, DEFAULT_THEME, FONT_FAMILY, hexToNum } from './theme';
+import { BASE_HEIGHT, BASE_WIDTH, setupView, type View } from './viewport';
+import { drawCozyBackground } from './background';
 import { t } from '../i18n/translations';
 import { LocalStorageSaveService, type SaveService } from '../services/SaveService';
 import { getDebugLevelParam } from './debugLevelParam';
@@ -14,25 +16,24 @@ const HOLD_MS = 650;
  */
 export class SplashScene extends Phaser.Scene {
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
+  private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
 
   constructor() {
     super('SplashScene');
   }
 
   create(): void {
+    this.vp = setupView(this);
     if (getDebugLevelParam() !== null) {
       this.scene.start('GameScene');
       return;
     }
 
     const lang = this.saveService.load().language;
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = this.vp.width;
+    const h = this.vp.height;
 
-    const g = this.add.graphics();
-    g.fillGradientStyle(hexToNum(COLORS.bgTop), hexToNum(COLORS.bgTop), shade(COLORS.bgBottom, -0.1), shade(COLORS.bgBottom, -0.1), 1, 1, 1, 1);
-    g.fillRect(0, 0, w, h);
-    document.body.style.background = `linear-gradient(180deg, ${COLORS.bgTop} 0%, ${COLORS.bgBottom} 100%)`;
+    drawCozyBackground(this, DEFAULT_THEME, this.vp, { motes: 10 });
 
     const mark = this.add.container(w / 2, h / 2 - 50).setScale(0.7).setAlpha(0);
     const box = this.add.graphics();
@@ -49,9 +50,9 @@ export class SplashScene extends Phaser.Scene {
 
     const title = this.add
       .text(w / 2, h / 2 + 40, t('appTitle', lang), {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: '34px',
-        fontStyle: '700',
+        fontStyle: '900',
         color: COLORS.ink,
       })
       .setOrigin(0.5)

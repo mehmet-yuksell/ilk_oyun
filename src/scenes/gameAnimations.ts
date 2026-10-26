@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { GameState } from '../core/types';
 import { JUICE } from '../config/tuning';
-import { COLORS, RADIUS, hexToNum } from './theme';
+import { COLORS, FONT_FAMILY, RADIUS, hexToNum } from './theme';
 import { starPoints } from './gameHud';
 import { t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
@@ -143,9 +143,9 @@ export class GameJuiceFx {
     const lang = this.host.getLang();
     const text = scene.add
       .text(layout.centerX, layout.topY - 10, `${t('comboLabel', lang, { n: combo })} ${this.comboTextFor(combo)}`, {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: '18px',
-        fontStyle: 'bold',
+        fontStyle: '800',
         color: COLORS.coral,
         stroke: '#ffffff',
         strokeThickness: 3,
@@ -196,9 +196,9 @@ export class GameJuiceFx {
     if (movedCount > 1) {
       const badge = scene.add
         .text(16, -14, `×${movedCount}`, {
-          fontFamily: 'Fredoka, sans-serif',
+          fontFamily: FONT_FAMILY,
           fontSize: '12px',
-          fontStyle: 'bold',
+          fontStyle: '800',
           color: '#ffffff',
           backgroundColor: COLORS.ink,
           padding: { x: 4, y: 1 },

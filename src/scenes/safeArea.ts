@@ -1,11 +1,13 @@
+import type Phaser from 'phaser';
+import { renderScale, viewOf } from './viewport';
+
 /**
- * CSS env(safe-area-inset-*) değerlerini (gerçek cihaz pikseli, çentik/ekran kenarı için) oyunun
- * mantıksal 540x960 koordinat sistemine çevirir. Phaser.Scale.FIT, en-boy oranı uymadığında canvas'ı
- * pencereden küçük çizip ortalar (letterbox) -- bu yüzden çentik payı genelde zaten boş bar alanına
- * düşer. Burada canvas'ın gerçek ekran konumunu da hesaba katarak gereksiz fazla boşluk bırakmadan,
- * hiçbir interaktif öğenin kenara/çentiğe yapışmamasını garanti eden bir minimum (MIN_MARGIN) uygularız.
+ * CSS env(safe-area-inset-*) değerlerini (çentik, alt navigasyon çubuğu -- CSS pikseli) sahnenin
+ * mantıksal koordinat sistemine çevirir. Canvas artık ekranı kenardan kenara kapladığı için
+ * (bkz. viewport.ts) çentik payı doğrudan uygulanır; aşırı en-boy oranında kamera içeriği
+ * ortalayıp kenarda boş pay bıraktıysa (letterbox) o pay çentikten düşülür. Hiçbir etkileşimli
+ * öğe kenara yapışmasın diye her kenarda en az MIN_MARGIN bırakılır.
  */
-const LOGICAL_WIDTH = 540;
 const MIN_MARGIN = 20;
 
 export interface SafeAreaInsets {
@@ -21,21 +23,19 @@ function readInsetPx(varName: string): number {
   return Number.isFinite(px) ? px : 0;
 }
 
-export function readSafeAreaInsets(canvas: HTMLCanvasElement): SafeAreaInsets {
-  const rect = canvas.getBoundingClientRect();
-  const scale = rect.width > 0 ? LOGICAL_WIDTH / rect.width : 1;
-  const winW = window.innerWidth;
-  const winH = window.innerHeight;
-
-  const topPx = Math.max(0, readInsetPx('--sat') - rect.top);
-  const bottomPx = Math.max(0, readInsetPx('--sab') - (winH - rect.bottom));
-  const leftPx = Math.max(0, readInsetPx('--sal') - rect.left);
-  const rightPx = Math.max(0, readInsetPx('--sar') - (winW - rect.right));
+export function readSafeAreaInsets(scene: Phaser.Scene): SafeAreaInsets {
+  const view = viewOf(scene);
+  const zoom = scene.cameras.main.zoom || 1;
+  const k = renderScale();
+  // Mantıksal alanın canvas içindeki fiziksel kenar boşlukları (letterbox payı).
+  const padX = Math.max(0, (scene.scale.width - view.width * zoom) / 2);
+  const padY = Math.max(0, (scene.scale.height - view.height * zoom) / 2);
+  const toLogical = (cssPx: number, pad: number) => Math.max(0, cssPx * k - pad) / zoom;
 
   return {
-    top: Math.max(MIN_MARGIN, topPx * scale),
-    right: Math.max(MIN_MARGIN, rightPx * scale),
-    bottom: Math.max(MIN_MARGIN, bottomPx * scale),
-    left: Math.max(MIN_MARGIN, leftPx * scale),
+    top: Math.max(MIN_MARGIN, toLogical(readInsetPx('--sat'), padY)),
+    right: Math.max(MIN_MARGIN, toLogical(readInsetPx('--sar'), padX)),
+    bottom: Math.max(MIN_MARGIN, toLogical(readInsetPx('--sab'), padY)),
+    left: Math.max(MIN_MARGIN, toLogical(readInsetPx('--sal'), padX)),
   };
 }

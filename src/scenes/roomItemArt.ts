@@ -183,7 +183,7 @@ function drawFrame(g: Phaser.GameObjects.Graphics, w: number, h: number, body: n
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.38, -h * 0.44, w * 0.76, h * 0.82, 5);
-  g.fillStyle(on ? 0xfff8f0 : hexToNum(COLORS.surface), on ? 0.95 : 0.7);
+  g.fillStyle(on ? hexToNum(COLORS.glassLight) : hexToNum(COLORS.surface), on ? 0.95 : 0.7);
   const iw = w * 0.56;
   const ih = h * 0.6;
   g.fillRoundedRect(-iw / 2, -ih / 2 - h * 0.02, iw, ih, 3);
@@ -235,7 +235,7 @@ function drawTvStand(g: Phaser.GameObjects.Graphics, w: number, h: number, body:
   g.fillRoundedRect(-w * 0.44, h * 0.14, w * 0.88, h * 0.18, 5);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.4, -h * 0.38, w * 0.8, h * 0.5, 6);
-  g.fillStyle(on ? 0x1b1b1b : hexToNum(COLORS.surface), on ? 0.85 : 0.5);
+  g.fillStyle(on ? hexToNum(COLORS.screenDark) : hexToNum(COLORS.surface), on ? 0.85 : 0.5);
   g.fillRoundedRect(-w * 0.34, -h * 0.32, w * 0.68, h * 0.36, 3);
   gloss(g, -w * 0.08, -h * 0.22, w * 0.22, h * 0.1, on);
 }

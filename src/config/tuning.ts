@@ -1,82 +1,22 @@
 /**
- * TEK AYAR DOSYASI -- zorluk sayıları, renk paleti, konfeti miktarı ve animasyon süreleri
- * burada toplanır. Oyunun "hissini" telefonda oynarken ayarlamak için başka hiçbir dosyaya
- * dokunmaya gerek kalmasın diye: tüm diğer dosyalar (theme.ts, juiceConfig.ts,
- * difficultyCurve.ts, confetti.ts) buradaki sabitleri içe aktarıp kullanır.
+ * TEK AYAR DOSYASI -- zorluk sayıları, konfeti miktarı ve animasyon süreleri burada toplanır.
+ * Oyunun "hissini" telefonda oynarken ayarlamak için başka hiçbir dosyaya dokunmaya gerek
+ * kalmasın diye: diğer dosyalar (juiceConfig.ts, difficultyCurve.ts, confetti.ts) buradaki
+ * sabitleri içe aktarıp kullanır.
+ *
+ * Renk paleti ve oda temaları Faz 1'de tasarım sistemine (src/scenes/theme.ts) taşındı; eski
+ * içe aktarmalar kırılmasın diye buradan yeniden dışa aktarılır.
  */
 
-// ---------------------------------------------------------------------
-// RENK PALETİ
-// ---------------------------------------------------------------------
-
-export interface RoomTheme {
-  readonly bgTop: string;
-  readonly bgBottom: string;
-}
-
-/**
- * Her 10 seviyede bir sırayla değişen, dengeli-doygun degrade arkaplan temaları. Üst durak hâlâ
- * pastel/soluk DEĞİL (bir önceki fazın dersi), ama alt durakla birlikte aşırı neon uçlardan
- * (saf #RGB uçları) kaçınıp tek bir "yumuşatılmış mücevher tonu" diline oturacak şekilde
- * dengelendi -- bkz. Faz 4 kararları (önceki tema seti "aşırı doygun/neon" bulundu). */
-export const ROOM_THEMES: readonly RoomTheme[] = [
-  { bgTop: '#F2905E', bgBottom: '#E6566D' }, // sıcak mercan gün batımı
-  { bgTop: '#4FB6C9', bgBottom: '#3E73C4' }, // yumuşak turkuaz -> okyanus mavisi
-  { bgTop: '#A877D6', bgBottom: '#D95C95' }, // lavanta -> böğürtlen pembesi
-  { bgTop: '#E8C24A', bgBottom: '#E2893F' }, // bal sarısı -> kehribar turuncu
-  { bgTop: '#52BD82', bgBottom: '#2F9C94' }, // ada çayı yeşili -> koyu turkuaz
-] as const;
-
-/** Tema her THEME_CHANGE_EVERY_LEVELS seviyede bir döner (seviye 1-10 -> tema 0, 11-20 -> tema 1, ...). */
-export const THEME_CHANGE_EVERY_LEVELS = 10;
-
-export function themeIndexForLevel(levelNumber: number): number {
-  const n = Math.max(1, Math.floor(levelNumber));
-  return Math.floor((n - 1) / THEME_CHANGE_EVERY_LEVELS) % ROOM_THEMES.length;
-}
-
-export function themeForLevel(levelNumber: number): RoomTheme {
-  return ROOM_THEMES[themeIndexForLevel(levelNumber)];
-}
-
-/** Doygun vurgu paleti -- en az 10 renk, metin/ikon kontrastı güçlü koyu mor-lacivert ile birlikte. */
-export const PALETTE = {
-  ink: '#352455', // koyu mor-lacivert -- ana metin
-  inkSoft: '#6E5A8C', // ikincil metin
-  cream: '#FFFBF5', // koyu zeminde metin
-
-  surface: '#FFFFFF',
-  surfaceMuted: '#E6DFEE',
-
-  coral: '#F2685F',
-  turquoise: '#2BB8AE',
-  mustard: '#F0BD3E',
-  purple: '#8463D6',
-  green: '#3DBE78',
-  pink: '#E8689F',
-  sky: '#3E93DB',
-  amber: '#EA9430',
-  maroon: '#C53349',
-  navy: '#3E52BD',
-
-  gold: '#FFC94A',
-  success: '#2FBE6B',
-  danger: '#E8415A',
-} as const;
-
-/** 10 eşya türü için sırayla kullanılan doygun aksan renkleri (ITEM_TYPE_POOL sırasıyla eşleşir). */
-export const ITEM_ACCENTS: readonly string[] = [
-  PALETTE.coral,
-  PALETTE.turquoise,
-  PALETTE.mustard,
-  PALETTE.purple,
-  PALETTE.green,
-  PALETTE.pink,
-  PALETTE.sky,
-  PALETTE.amber,
-  PALETTE.maroon,
-  PALETTE.navy,
-];
+export {
+  ITEM_ACCENTS,
+  PALETTE,
+  ROOM_THEMES,
+  THEME_CHANGE_EVERY_LEVELS,
+  themeForLevel,
+  themeIndexForLevel,
+  type RoomTheme,
+} from '../scenes/theme';
 
 // ---------------------------------------------------------------------
 // ZORLUK

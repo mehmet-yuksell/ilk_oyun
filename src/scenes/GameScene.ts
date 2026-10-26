@@ -17,9 +17,10 @@ import { generateVerifiedLevel } from '../core/levelGenerator';
 import { computePar } from '../core/solver';
 import { accentFor, createItemVisual, strokeArc } from './itemVisuals';
 import { JUICE, DIFFICULTY, themeForLevel } from '../config/tuning';
-import { COLORS, RADIUS, SHADOW, TYPE_SCALE, hexToNum, shade } from './theme';
+import { COLORS, FONT_FAMILY, RADIUS, SHADOW, TYPE_SCALE, hexToNum, shade } from './theme';
+import { BASE_HEIGHT, BASE_WIDTH, setupView, toWorld, type View } from './viewport';
+import { drawCozyBackground } from './background';
 import { readSafeAreaInsets } from './safeArea';
-import { syncBodyBackground } from './bodyBackground';
 import { fadeToScene } from './sceneTransition';
 import { getDebugLevelParam } from './debugLevelParam';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
@@ -79,6 +80,7 @@ const MAX_GRID_SCALE = 1.32;
 const INK = hexToNum(COLORS.ink);
 
 export class GameScene extends Phaser.Scene {
+  private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
   private readonly hapticService: HapticService = new WebVibrationHapticService();
   private readonly soundService: SoundService = new WebAudioSoundService();
@@ -138,6 +140,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(data: GameSceneData): void {
+    this.vp = setupView(this);
     this.saveData = this.saveService.load();
     this.lang = this.saveData.language;
 
@@ -201,7 +204,7 @@ export class GameScene extends Phaser.Scene {
       cancelTutorial: () => this.tutorial.cancel(),
     });
 
-    const insets = readSafeAreaInsets(this.sys.game.canvas as HTMLCanvasElement);
+    const insets = readSafeAreaInsets(this);
     this.safeTop = insets.top;
     this.safeBottom = insets.bottom;
 
@@ -220,9 +223,9 @@ export class GameScene extends Phaser.Scene {
 
     const labelText = this.add
       .text(0, headerY, loaded.label, {
-        fontFamily: 'Fredoka, sans-serif',
+        fontFamily: FONT_FAMILY,
         fontSize: `${TYPE_SCALE.sectionTitle}px`,
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.ink,
         stroke: '#ffffff',
         strokeThickness: 3,
@@ -230,28 +233,28 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(1);
 
-    const maxPillW = this.scale.width - 2 * (insets.left + 56);
+    const maxPillW = this.vp.width - 2 * (insets.left + 56);
     if (labelText.width + 72 > maxPillW) {
       labelText.setFontSize(13); // debug modunda çok uzun etiketler (ör. "#450, kilitli kap") için
     }
     const pillW = Math.min(maxPillW, Math.max(180, labelText.width + 72));
-    labelText.setX(this.scale.width / 2 - 14);
+    labelText.setX(this.vp.width / 2 - 14);
 
     const pill = this.add.graphics();
     pill.fillStyle(hexToNum(COLORS.surface), 0.88);
-    pill.fillRoundedRect(this.scale.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
+    pill.fillRoundedRect(this.vp.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
     pill.lineStyle(2, hexToNum(COLORS.coral), 0.55);
-    pill.strokeRoundedRect(this.scale.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
+    pill.strokeRoundedRect(this.vp.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
     pill.setDepth(0);
 
-    this.starAnchor = { x: this.scale.width / 2 + pillW / 2 - 24, y: headerY };
+    this.starAnchor = { x: this.vp.width / 2 + pillW / 2 - 24, y: headerY };
     drawStarGlyph(this, this.starAnchor.x, this.starAnchor.y, 9);
 
     this.statusSubText = this.add
-      .text(this.scale.width / 2, headerY + 32, '', {
-        fontFamily: 'Fredoka, sans-serif',
+      .text(this.vp.width / 2, headerY + 32, '', {
+        fontFamily: FONT_FAMILY,
         fontSize: `${TYPE_SCALE.hudCounter}px`,
-        fontStyle: '600',
+        fontStyle: '800',
         color: COLORS.inkSoft,
         stroke: '#ffffff',
         strokeThickness: 2,
@@ -259,8 +262,8 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.stuckBanner = this.add
-      .text(this.scale.width / 2, headerY + 56, t('stuckBanner', this.lang), {
-        fontFamily: 'Fredoka, sans-serif',
+      .text(this.vp.width / 2, headerY + 56, t('stuckBanner', this.lang), {
+        fontFamily: FONT_FAMILY,
         fontSize: `${TYPE_SCALE.body}px`,
         color: COLORS.cream,
         backgroundColor: COLORS.danger,
@@ -272,10 +275,10 @@ export class GameScene extends Phaser.Scene {
     this.framesLayer = this.add.container(0, 0);
     this.itemsLayer = this.add.container(0, 0);
 
-    const buttonY = this.scale.height - this.safeBottom - BUTTON_HEIGHT / 2 - 6;
+    const buttonY = this.vp.height - this.safeBottom - BUTTON_HEIGHT / 2 - 6;
     this.undoButton = createButton(
       this,
-      this.scale.width / 2 - (BUTTON_WIDTH + 20) / 2,
+      this.vp.width / 2 - (BUTTON_WIDTH + 20) / 2,
       buttonY,
       t('undoButton', this.lang),
       'undo',
@@ -284,7 +287,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.extraContainerButton = createButton(
       this,
-      this.scale.width / 2 + (BUTTON_WIDTH + 20) / 2,
+      this.vp.width / 2 + (BUTTON_WIDTH + 20) / 2,
       buttonY,
       this.extraContainerLabel(),
       'plus',
@@ -297,9 +300,9 @@ export class GameScene extends Phaser.Scene {
     this.refreshAll();
     this.checkStuckOrWin();
 
-    this.input.on('pointerdown', this.inputController.onPointerDown, this.inputController);
-    this.input.on('pointermove', this.inputController.onPointerMove, this.inputController);
-    this.input.on('pointerup', this.inputController.onPointerUp, this.inputController);
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.inputController.onPointerDown(toWorld(this, p)));
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.inputController.onPointerMove(toWorld(this, p)));
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.inputController.onPointerUp(toWorld(this, p)));
 
     if (this.sessionMode === 'progress' && this.levelNumber === 1 && !this.saveData.seenHints.includes(MOVE_TUTORIAL_HINT_KEY)) {
       this.saveData = { ...this.saveData, seenHints: [...this.saveData.seenHints, MOVE_TUTORIAL_HINT_KEY] };
@@ -392,56 +395,7 @@ export class GameScene extends Phaser.Scene {
   // ---------------------------------------------------------------------
 
   private drawBackground(): void {
-    const w = this.scale.width;
-    const h = this.scale.height;
-    const wallBottom = h * 0.58;
-    const theme = themeForLevel(this.levelNumber ?? 1);
-    syncBodyBackground(theme.bgTop, theme.bgBottom);
-
-    const g = this.add.graphics();
-    g.fillGradientStyle(hexToNum(theme.bgTop), hexToNum(theme.bgTop), shade(theme.bgTop, -0.08), shade(theme.bgTop, -0.08), 1, 1, 1, 1);
-    g.fillRect(0, 0, w, wallBottom);
-
-    g.fillGradientStyle(
-      hexToNum(theme.bgBottom),
-      hexToNum(theme.bgBottom),
-      shade(theme.bgBottom, -0.2),
-      shade(theme.bgBottom, -0.2),
-      1,
-      1,
-      1,
-      1,
-    );
-    g.fillRect(0, wallBottom, w, h - wallBottom);
-
-    g.fillStyle(0xffffff, 0.25);
-    g.fillRect(0, wallBottom - 2, w, 3);
-
-    g.fillStyle(0xffffff, 0.08);
-    for (let i = 0; i < 5; i++) {
-      const ly = wallBottom + 18 + i * ((h - wallBottom - 24) / 5);
-      g.fillRect(0, ly, w, 1.5);
-    }
-
-    g.fillStyle(0xffffff, 0.1);
-    g.fillCircle(w * 0.86, h * 0.14, 110);
-    g.fillStyle(0x000000, 0.05);
-    g.fillCircle(w * 0.08, h * 0.46, 130);
-
-    // Kapların altındaki boş zemini bir "halı" illüstrasyonuyla doldurur -- az sayıda kap olan
-    // (erken) seviyelerde ekranın alt yarısı çıplak/boş hissettirmesin diye belirgin (yüksek alfa,
-    // çok katmanlı) bir desen kullanılır.
-    const rugY = h * 0.79;
-    const rugW = w * 0.82;
-    const rugH = h * 0.2;
-    g.fillStyle(0xffffff, 0.22);
-    g.fillEllipse(w / 2, rugY, rugW, rugH);
-    g.fillStyle(0xffffff, 0.16);
-    g.fillEllipse(w / 2, rugY, rugW * 0.74, rugH * 0.7);
-    g.lineStyle(3, 0xffffff, 0.3);
-    g.strokeEllipse(w / 2, rugY, rugW * 0.9, rugH * 0.86);
-    g.lineStyle(2, 0xffffff, 0.24);
-    g.strokeEllipse(w / 2, rugY, rugW * 0.5, rugH * 0.46);
+    drawCozyBackground(this, themeForLevel(this.levelNumber ?? 1), this.vp, { floorAt: 0.6, motes: 12 });
   }
 
   // ---------------------------------------------------------------------
@@ -459,14 +413,14 @@ export class GameScene extends Phaser.Scene {
     // COLS kap) her zaman ekran genişliğine (kenar boşluklarıyla) sığmalı, aksi halde kaplar
     // ekranın yanlarından taşar.
     const rows = Math.max(1, Math.ceil(ids.length / COLS));
-    const buttonTop = this.scale.height - this.safeBottom - BUTTON_HEIGHT - 26;
+    const buttonTop = this.vp.height - this.safeBottom - BUTTON_HEIGHT - 26;
     const availableHeight = Math.max(100, buttonTop - TOP_MARGIN);
     const neededAtBase = rows * 4 * BASE_SLOT_HEIGHT + (rows - 1) * ROW_GAP;
     const heightScale = availableHeight / neededAtBase;
 
     const widestRow = Math.min(COLS, ids.length);
     const sideMargin = 20;
-    const availableWidth = this.scale.width - 2 * sideMargin;
+    const availableWidth = this.vp.width - 2 * sideMargin;
     const neededWidthAtBase = widestRow * BASE_CONTAINER_WIDTH + (widestRow - 1) * COL_GAP;
     const widthScale = availableWidth / neededWidthAtBase;
 
@@ -491,7 +445,7 @@ export class GameScene extends Phaser.Scene {
       const col = index % COLS;
       const itemsInRow = Math.min(COLS, ids.length - row * COLS);
       const rowWidth = itemsInRow * this.containerWidth + (itemsInRow - 1) * colGap;
-      const rowStartX = this.scale.width / 2 - rowWidth / 2;
+      const rowStartX = this.vp.width / 2 - rowWidth / 2;
 
       const boxHeight = container.capacity * this.slotHeight;
       const x = rowStartX + col * (this.containerWidth + colGap);
@@ -639,9 +593,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showHintBubble(title: string, body: string): void {
-    const w = Math.min(this.scale.width - 40, 380);
+    const w = Math.min(this.vp.width - 40, 380);
     const y = this.safeTop + 158;
-    const container = this.add.container(this.scale.width / 2, y).setDepth(250).setAlpha(0);
+    const container = this.add.container(this.vp.width / 2, y).setDepth(250).setAlpha(0);
 
     const bg = this.add.graphics();
     bg.fillStyle(hexToNum(COLORS.ink), 0.92);
@@ -649,13 +603,13 @@ export class GameScene extends Phaser.Scene {
     container.add(bg);
     container.add(
       this.add
-        .text(0, -14, title, { fontFamily: 'Fredoka, sans-serif', fontSize: '14px', fontStyle: '600', color: COLORS.cream })
+        .text(0, -14, title, { fontFamily: FONT_FAMILY, fontSize: '14px', fontStyle: '800', color: COLORS.cream })
         .setOrigin(0.5),
     );
     container.add(
       this.add
         .text(0, 10, body, {
-          fontFamily: 'Fredoka, sans-serif',
+          fontFamily: FONT_FAMILY,
           fontSize: `${TYPE_SCALE.caption}px`,
           color: COLORS.cream,
           align: 'center',
@@ -1003,7 +957,7 @@ export class GameScene extends Phaser.Scene {
     container.add(g);
     container.add(
       this.add
-        .text(0, 0, '?', { fontFamily: 'Fredoka, sans-serif', fontSize: `${Math.round(bodyH * 0.6)}px`, fontStyle: '700', color: COLORS.ink })
+        .text(0, 0, '?', { fontFamily: FONT_FAMILY, fontSize: `${Math.round(bodyH * 0.6)}px`, fontStyle: '900', color: COLORS.ink })
         .setOrigin(0.5),
     );
     return container;
