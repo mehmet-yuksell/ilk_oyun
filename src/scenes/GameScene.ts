@@ -27,6 +27,7 @@ import { getDebugLevelParam } from './debugLevelParam';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { type HapticService, createHapticService } from '../services/HapticService';
 import { type SoundService, WebAudioSoundService } from '../services/SoundService';
+import { audioEngine } from '../services/AudioEngine';
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { t } from '../i18n/translations';
@@ -82,7 +83,7 @@ export class GameScene extends Phaser.Scene {
   private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
   private readonly hapticService: HapticService = createHapticService();
-  private readonly soundService: SoundService = new WebAudioSoundService();
+  private readonly soundService: SoundService = new WebAudioSoundService(audioEngine);
   private readonly analytics: AnalyticsService = new ConsoleAnalyticsService();
 
   // Aşağıdaki alanların hepsi create()'de sıfırdan atanır: Phaser sahne örneğini
@@ -383,18 +384,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Haptic + ses geri bildirimini tek yerden, ayarlara saygılı biçimde tetikler. */
-  private feedback(kind: FeedbackKind): void {
+  private feedback(kind: FeedbackKind, index = 0): void {
     if (this.saveData.hapticEnabled) {
-      if (kind === 'tap' || kind === 'land' || kind === 'star') this.hapticService.light();
-      else if (kind === 'complete') this.hapticService.success();
+      if (kind === 'tap' || kind === 'land' || kind === 'star' || kind === 'button') this.hapticService.light();
+      else if (kind === 'complete' || kind === 'win') this.hapticService.success();
       else if (kind === 'invalid') this.hapticService.warning();
       else this.hapticService.medium();
     }
     if (this.saveData.soundEnabled) {
-      if (kind === 'tap') this.soundService.tap();
-      else if (kind === 'land' || kind === 'medium') this.soundService.land();
-      else if (kind === 'complete' || kind === 'star') this.soundService.complete();
-      else if (kind === 'invalid') this.soundService.invalid();
+      const sfx = this.soundService;
+      const play: Record<FeedbackKind, () => void> = {
+        tap: () => sfx.tap(),
+        land: () => sfx.land(),
+        medium: () => sfx.land(),
+        complete: () => sfx.complete(),
+        invalid: () => sfx.invalid(),
+        star: () => sfx.star(index),
+        win: () => sfx.win(),
+        button: () => sfx.button(),
+        unlock: () => sfx.unlock(),
+      };
+      play[kind]();
     }
   }
 
@@ -707,7 +717,7 @@ export class GameScene extends Phaser.Scene {
 
     // Oda ekranına geçiş zamanlanırken ek bir hamle bu akışı bozmasın diye girdi kilitlenir.
     this.isAnimating = true;
-    this.feedback('complete');
+    this.time.delayedCall(320, () => this.feedback('win'));
 
     const data = this.saveService.load();
     const awarded = this.sessionMode === 'progress' ? PROGRESS_LEVEL_STARS : DAILY_PUZZLE_STARS;
@@ -743,8 +753,8 @@ export class GameScene extends Phaser.Scene {
         prefersReducedMotion,
         moves: effectiveMoves,
         durationMs,
-        onStar: () => this.feedback('star'),
-        onButtonPress: () => this.feedback('tap'),
+        onStar: (i) => this.feedback('star', i),
+        onButtonPress: () => this.feedback('button'),
         onNext: () => fadeToScene(this, 'RoomScene'),
       }),
     );
@@ -764,7 +774,7 @@ export class GameScene extends Phaser.Scene {
     showLevelLostPanel(this, {
       moveLimit: this.moveLimit,
       lang: this.lang,
-      onButtonPress: () => this.feedback('tap'),
+      onButtonPress: () => this.feedback('button'),
       onRetry: () => this.restartSameLevel(),
       onBackToRoom: () => fadeToScene(this, 'RoomScene'),
     });
@@ -810,7 +820,7 @@ export class GameScene extends Phaser.Scene {
       const isLocked = isContainerLocked(c, newState);
       if (wasLocked && !isLocked) {
         this.fx.flashUnlock(c.id);
-        this.feedback('medium');
+        this.feedback('unlock');
       }
     }
   }

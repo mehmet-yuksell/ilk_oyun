@@ -186,3 +186,35 @@ efekt dokusu, sonra sabit).
 **Kararlar**
 - Web'de titreşim tamamen kapalı (istek: "web'de sessizce atla") — eski `navigator.vibrate` sınıfı testler için duruyor ama varsayılan değil.
 - Yıldız sesi için şimdilik "complete" sesi kullanılıyor; Faz 4'te ayrı yıldız sesi gelecek.
+
+---
+
+## FAZ 4 — Ses
+
+**Yapılanlar**
+- **Tek ses motoru** (`services/AudioEngine.ts`): eskiden her sahne kendi `AudioContext`'ini açıyordu; artık tek bağlam
+  + iki veriyolu (efekt / müzik). İlk kullanıcı dokunuşunda (pointerdown/touchend/keydown) açılır — mobil autoplay
+  kısıtı. Uygulama arka plana gidince askıya alınır, dönünce sürdürülür.
+- **Efektler** (`SoundService.ts`, hepsi Web Audio ile üretilir): seç (ahşap "tık"), bırak/iniş (dolgun "tok", her
+  inişte ±%4 perde — robotik tekrar yok), grup tamamlama ("ding-ding" cam çınlaması), hata (iki inen yumuşak nota —
+  sert uyarı yok), kazanma (C-E-G-C çan arpeji + sıcak taban notası), panel yıldızları (her yıldız bir üst nota),
+  UI butonu, kilit açılma.
+- **Müzik** (`MusicService.ts`): prosedürel, sakin 8 ölçülük döngü, 72 BPM — Cmaj7 / Am7 / Fmaj7 / G6 pad (detune'lu
+  üçgen + alçak geçiren), sabit tohumla üretilen C majör pentatonik tıngırtı melodisi + yankı, yumuşak bas.
+  "Lookahead" zamanlayıcı (120 ms'de bir, 0.6 sn ileri) — setTimeout titremesi ritmi bozmaz. Varsayılan düşük.
+- **Ayrı aç/kapa**: Ayarlar'da "Ses efektleri" ve "Müzik" ayrı satırlar (`SaveData.musicEnabled`, eski kayıtlarda
+  varsayılan açık — `migrateSaveData` eksik anahtarı varsayılanla doldurur). Müzik kapatılınca 0.6 sn'de yumuşakça susar.
+- **Kalıcılık**: ayarlar `SaveService` üzerinden localStorage + `@capacitor/preferences` (native SharedPreferences
+  yedeği) — mevcut mekanizma, yeni alan otomatik dahil.
+- +11 test (motor: tek bağlam, kilit dinleyicileri, askıya alma, bağlamsız güvenlik; müzik: deterministik melodi,
+  yalnızca pentatonik; efektler: veriyolu bağlantısı, perde çeşitliliği). Toplam 151 test.
+
+**Tarayıcıda doğrulama** (`scripts/_audiocheck.cjs`, gerçek Chromium + AnalyserNode):
+- dokunuştan önce `unlocked=false`; dokunuştan sonra bağlam `running`, müzik veriyolu tepe ≈ 0.036 (≈ -29 dBFS;
+  efektlerin tepesi ≈ 0.1 — müzik bilerek arkada); müzik kapatılınca tepe 0.
+- Bilinen sınır: sesin *kulağa nasıl geldiği* otomatik test edilemez — yalnızca çaldığı ve seviyeleri ölçüldü.
+  Gerçek cihazda kulakla dinlenmesi önerilir.
+
+**Kararlar**
+- Eski ses testleri (tap = 1 osilatör + lowpass, complete = 2 osilatör + bandpass) sözleşme olarak korundu.
+- Müzik sahne değil uygulama ömrüne bağlı (sahne geçişlerinde kesilmez).

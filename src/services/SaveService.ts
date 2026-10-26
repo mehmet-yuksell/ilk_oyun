@@ -19,7 +19,10 @@ export interface SaveData {
   readonly rooms: readonly RoomProgress[];
   readonly dailyReward: DailyRewardState;
   readonly language: Language;
+  /** Ses efektleri (müzikten bağımsız). */
   readonly soundEnabled: boolean;
+  /** Arka plan müziği -- Faz 4'te eklendi; eski kayıtlarda migrateSaveData varsayılanla (açık) doldurur. */
+  readonly musicEnabled: boolean;
   readonly hapticEnabled: boolean;
   /** Daha önce ipucu balonu gösterilmiş engel türleri ('mystery'|'lock'|'typeLock') -- her biri yalnızca ilk görüldüğünde anlatılır. */
   readonly seenHints: readonly string[];
@@ -35,6 +38,7 @@ export function createDefaultSaveData(): SaveData {
     dailyReward: { lastClaimedDate: null, streak: 0 },
     language: 'tr',
     soundEnabled: true,
+    musicEnabled: true,
     hapticEnabled: true,
     seenHints: [],
   };

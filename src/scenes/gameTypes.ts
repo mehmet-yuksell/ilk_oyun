@@ -21,4 +21,4 @@ export interface ActiveObstacles {
 }
 
 export type SessionMode = 'progress' | 'daily' | 'debug' | 'demo';
-export type FeedbackKind = 'tap' | 'land' | 'complete' | 'invalid' | 'medium' | 'star';
+export type FeedbackKind = 'tap' | 'land' | 'complete' | 'invalid' | 'medium' | 'star' | 'win' | 'button' | 'unlock';

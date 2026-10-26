@@ -5,6 +5,7 @@ import { BASE_HEIGHT, BASE_WIDTH, setupView, type View } from './viewport';
 import { drawCozyBackground } from './background';
 import { readSafeAreaInsets } from './safeArea';
 import { t } from '../i18n/translations';
+import { music } from '../services/MusicService';
 import type { Language } from '../i18n/translations';
 
 const ROW_X = 40;
@@ -45,7 +46,7 @@ export class SettingsScene extends Phaser.Scene {
     const cardX = this.vp.width / 2 - (ROW_WIDTH + 40) / 2;
     const cardY = rowsTop - 30;
     const cardW = ROW_WIDTH + 40;
-    const cardH = 172;
+    const cardH = 226;
     const card = this.add.graphics();
     card.fillStyle(hexToNum(COLORS.surface), 0.92);
     card.fillRoundedRect(cardX, cardY, cardW, cardH, RADIUS.lg);
@@ -56,6 +57,11 @@ export class SettingsScene extends Phaser.Scene {
     y = this.addLanguageRow(y, lang);
     y = this.addToggleRow(y, t('soundLabel', lang), this.saveData.soundEnabled, (value) => {
       this.saveData = { ...this.saveData, soundEnabled: value };
+      this.persistAndRefresh();
+    });
+    y = this.addToggleRow(y, t('musicLabel', lang), this.saveData.musicEnabled, (value) => {
+      this.saveData = { ...this.saveData, musicEnabled: value };
+      music.setEnabled(value);
       this.persistAndRefresh();
     });
     this.addToggleRow(y, t('hapticLabel', lang), this.saveData.hapticEnabled, (value) => {

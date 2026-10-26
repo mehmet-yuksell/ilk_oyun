@@ -5,6 +5,7 @@ import { canClaimDailyReward, claimDailyReward, todayKey } from '../core/dailyRe
 import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
 import { type HapticService, createHapticService } from '../services/HapticService';
 import { type SoundService, WebAudioSoundService } from '../services/SoundService';
+import { audioEngine } from '../services/AudioEngine';
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { getDebugLevelParam } from './debugLevelParam';
 import { colorForItemIndex } from './roomVisuals';
@@ -58,7 +59,7 @@ export class RoomScene extends Phaser.Scene {
   private vp: View = { width: BASE_WIDTH, height: BASE_HEIGHT };
   private readonly saveService: SaveService = new LocalStorageSaveService(window.localStorage);
   private readonly hapticService: HapticService = createHapticService();
-  private readonly soundService: SoundService = new WebAudioSoundService();
+  private readonly soundService: SoundService = new WebAudioSoundService(audioEngine);
   private readonly analytics: AnalyticsService = new ConsoleAnalyticsService();
 
   private saveData!: SaveData;

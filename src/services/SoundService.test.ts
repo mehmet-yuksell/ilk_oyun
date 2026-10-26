@@ -98,3 +98,68 @@ describe('NoopSoundService', () => {
     }).not.toThrow();
   });
 });
+
+describe('WebAudioSoundService (Faz 4 sesleri)', () => {
+  it('yeni sesler (yıldız, kazanma, buton, kilit) AudioContext yoksa hata fırlatmaz', () => {
+    const sound = new WebAudioSoundService();
+    expect(() => {
+      sound.star(0);
+      sound.star(5);
+      sound.win();
+      sound.button();
+      sound.unlock();
+    }).not.toThrow();
+  });
+
+  it('paylaşılan motor verilirse efektler motorun efekt veriyoluna bağlanır', async () => {
+    const { AudioEngine } = await import('./AudioEngine');
+    const param = () => ({ setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
+    const gains: { connect: ReturnType<typeof vi.fn> }[] = [];
+    const ctx = {
+      currentTime: 0,
+      state: 'running',
+      resume: vi.fn(),
+      createOscillator: vi.fn(() => ({ type: 'sine', frequency: param(), connect: vi.fn(), start: vi.fn(), stop: vi.fn() })),
+      createGain: vi.fn(() => {
+        const g = { gain: param(), connect: vi.fn() };
+        gains.push(g);
+        return g;
+      }),
+      createBiquadFilter: vi.fn(() => ({ type: 'lowpass', frequency: param(), Q: param(), connect: vi.fn() })),
+      destination: {},
+    };
+    const engine = new AudioEngine(() => ctx as never);
+    const sound = new WebAudioSoundService(engine);
+    sound.tap();
+    const sfxBus = gains[0];
+    const toneGain = gains[gains.length - 1];
+    expect(toneGain.connect).toHaveBeenCalledWith(sfxBus);
+  });
+
+  it('art arda inişler hafif farklı perdede çalar (robotik tekrar yok)', () => {
+    const freqs: number[] = [];
+    const param = () => ({ setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
+    const ctx = {
+      currentTime: 0,
+      state: 'running',
+      resume: vi.fn(),
+      createOscillator: vi.fn(() => ({
+        type: 'sine',
+        frequency: { setValueAtTime: (v: number) => freqs.push(v), exponentialRampToValueAtTime: vi.fn() },
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+      })),
+      createGain: vi.fn(() => ({ gain: param(), connect: vi.fn() })),
+      createBiquadFilter: vi.fn(() => ({ type: 'lowpass', frequency: param(), Q: param(), connect: vi.fn() })),
+      destination: {},
+    };
+    vi.stubGlobal('window', { AudioContext: function FakeAudioContext() { return ctx; } });
+    let r = 0;
+    const sound = new WebAudioSoundService(null, () => (r = (r + 0.37) % 1));
+    sound.land();
+    sound.land();
+    expect(freqs[0]).not.toBe(freqs[1]);
+    vi.unstubAllGlobals();
+  });
+});

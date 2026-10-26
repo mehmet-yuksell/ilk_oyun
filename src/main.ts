@@ -9,7 +9,9 @@ import { installPhaserDefaults } from './scenes/phaserDefaults';
 import { loadFonts } from './scenes/fonts';
 import { installResizeHandler, physicalSize, renderScale } from './scenes/viewport';
 import { ConsoleAnalyticsService } from './services/AnalyticsService';
-import { restoreFromPreferencesIfMissing } from './services/SaveService';
+import { LocalStorageSaveService, restoreFromPreferencesIfMissing } from './services/SaveService';
+import { audioEngine } from './services/AudioEngine';
+import { music } from './services/MusicService';
 
 async function boot(): Promise<void> {
   // Nunito, Phaser.Game oluşturulmadan ÖNCE yüklenmeli (bkz. scenes/fonts.ts).
@@ -57,6 +59,11 @@ async function boot(): Promise<void> {
   const game = new Phaser.Game(config);
   installResizeHandler(game);
 
+  // Ses: mobil tarayıcılar sesi ancak bir kullanıcı dokunuşundan sonra açar -- bağlam ilk dokunuşta
+  // açılır, müzik (ayarda açıksa) o anda yumuşakça girer (bkz. services/AudioEngine.ts).
+  audioEngine.installUnlock();
+  music.setEnabled(new LocalStorageSaveService(window.localStorage).load().musicEnabled);
+
   // Yalnızca geliştirme sunucusunda: Playwright ekran görüntüsü betiği (scripts/screenshots.mjs)
   // sahnelere bu kanca üzerinden ulaşır. Production build'de import.meta.env.DEV=false olduğu
   // için bu blok tamamen atılır.
@@ -70,8 +77,10 @@ async function boot(): Promise<void> {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       game.loop.sleep();
+      audioEngine.setSuspended(true);
     } else {
       game.loop.wake();
+      audioEngine.setSuspended(false);
     }
   });
 
