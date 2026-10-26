@@ -48,6 +48,13 @@ async function boot(): Promise<void> {
 
   const game = new Phaser.Game(config);
 
+  // Yalnızca geliştirme sunucusunda: Playwright ekran görüntüsü betiği (scripts/screenshots.mjs)
+  // sahnelere bu kanca üzerinden ulaşır. Production build'de import.meta.env.DEV=false olduğu
+  // için bu blok tamamen atılır.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __cozy?: Phaser.Game }).__cozy = game;
+  }
+
   // Uygulama arka plana gidince oyun döngüsünü tamamen durdurur (pil/CPU tasarrufu, garip ara
   // durumları önler). İlerleme zaten her anlamlı değişiklikte (hamle, yıldız, yenileme) senkron
   // olarak localStorage'a kaydedildiği için burada ayrıca bir kayıt çağrısına gerek yok.
