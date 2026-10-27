@@ -45,6 +45,8 @@ android/keystore.properties
 # Görev boyunca kullanılan tek seferlik Playwright/inceleme betikleri (üretim kodu değil)
 scripts/_*.cjs
 scripts/_*.ts
+scripts/_*.out
+scripts/_*.txt
 
 # İnceleme için alınan ekran görüntüleri (repoya değil, yalnızca yerel incelemeye yönelik)
 _review-screenshots/
