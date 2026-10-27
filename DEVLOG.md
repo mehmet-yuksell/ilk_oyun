@@ -301,3 +301,39 @@ başarım bildirimi, başarımlar paneli, günlük seri.
 **Kararlar**
 - Başarım bonusu küçük (+5 ★) tutuldu: ekonomiyi bozmadan "fark edildim" hissi; zorunlu görev/sayaç yok.
 - Hareketsizlik ipucu yalnızca ilk 3 seviyede — ileri seviyelerde çözümü fısıldamak oyunun zorluğunu bozar.
+
+---
+
+## FAZ 7 — Mağaza hazırlığı ve cila
+
+**Yapılanlar**
+- **Uygulama ikonu + splash** (`scripts/generateAppIcon.ts`, `npm run generate-icons`): sade, tek odak — şeftali→terrakota
+  zemin üzerinde ahşap rafta duran tek bir sevimli turkuaz fincan (oyunun eşya dili), buhar + ışıltı; yazı yok.
+  Android uyarlanabilir ikon için ön plan / arka plan ayrı (`capacitor-assets` %16.7 iç boşluk ekliyor → fincan ikonun
+  ~%37'si, güvenli alanda); açık (krem) ve koyu (erik) splash; `public/favicon.svg` aynı tasarım. 74 Android varlığı üretildi.
+  Yanak allığı kaldırıldı (turkuaz üstünde gri görünüyordu; oyundaki yüzlerle de tutarlı).
+- **Mağaza görselleri** (`scripts/storeShots.mjs` → `docs/store/`, 6 adet, 1080×2160 — Play Store 2:1 sınırında): ana ekran
+  (6 eşyası yenilenmiş oda), oyun (seçim anı + pencere dekoru), kazanma paneli (+10), seviye haritası, lavanta bölümü,
+  günlük seri. Kareler "temiz": öğretici/ipucu/başarım bildirimi önceden görülmüş sayılıyor.
+- **Sürüm**: Android `versionCode 3` / `versionName "1.2.0"` (Ayarlar'daki sürümle aynı); `docs/YAYIN.md` örneği güncellendi.
+
+**Erişilebilirlik**
+- **Dokunma hedefi — gerçek bir hata bulundu**: "en az 48" mantıksal birim cinsindendi; telefonda 1 birim ≈ 0.72 CSS px
+  olduğu için gerçekte ~35 px ediyordu. Yeni denetim (`scripts/_touch.cjs`, her etkileşimli nesnenin ekran boyutu CSS px):
+  önce **27 hedef 48 px altında** (ikon butonları 35×36, alt butonlar 40-45 px yükseklik, anahtarlar 35 px). Düzeltme:
+  `viewport.cssToLogical` + `ui.minTouch(scene)` — dokunma alanları artık fiziksel 48 CSS px'ten hesaplanıyor; ikon
+  butonları 50 birime büyüdü, üst şerit aralıkları genişledi (alanlar çakışmasın), TR/EN dilimleri 68 birim. Sonra: **0**.
+- **Renk körlüğü**: eşyalar zaten şekille ayrışıyor (10 farklı siluet). Tek salt renge bağlı öğe "tek türlü kap" rozetiydi
+  (renkli halka + nokta) → artık halkanın içinde kabul edilen türün **siluet**i var (`drawItemSilhouette`).
+
+**Hata taraması** (`scripts/_bugscan.cjs`, hepsi GEÇTİ, konsol hatası yok)
+- Hızlı art arda 300 rastgele dokunuş: oyun durumu ile görünen eşyalar tutarlı, animasyon kilidi takılı kalmıyor.
+- OYNA'ya 50 ms arayla çift dokunuş: tek sahne geçişi (fadeToScene koruması).
+- Döndürme (dikey→yatay→dikey, oyun ortasında): canvas yeniden boyutlanıyor, sahne/oyun durumu korunuyor; yatayda
+  içerik ortalanıp kenarlar krem zeminle doluyor. Android'de zaten `screenOrientation="portrait"`.
+- **WebGL bağlam kaybı** (Android'de arka plana gidip gelirken sık): `WEBGL_lose_context` ile kaybettirilip geri getirildi —
+  dokular doğru yeniden çiziliyor (ekran görüntüsüyle doğrulandı), hamle yapılabiliyor.
+- **Arka plan / ön plan**: `@capacitor/app` `appStateChange` da dinleniyor (bazı WebView'lerde `visibilitychange`
+  gecikiyor → müzik arkada çalabiliyordu); oyun döngüsü + ses birlikte duruyor, dönüşte kamera yeniden sığdırılıyor.
+- **Düşük bellek**: arka plan dokuları en fazla 4 (LRU), pişmiş dokular boyutla sınırlı; 20 sahne döngüsünde doku sayısı
+  96'da sabit, JS belleği 58 MB sabit. Native `onTrimMemory` web katmanından erişilemiyor (bilinen sınır, aşağıda).

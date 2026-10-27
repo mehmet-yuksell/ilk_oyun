@@ -554,3 +554,8 @@ export function resetItemVisual(container: Phaser.GameObjects.Container): void {
 export function drawItemArt(scene: Phaser.Scene, type: ItemType, w: number, h: number): Phaser.GameObjects.Container {
   return createItemVisual(scene, type, w, h).container;
 }
+
+/** Bir türün siluetini (yüzsüz) verilen kutuya çizer -- rozet gibi küçük, renkten bağımsız işaretler için. */
+export function drawItemSilhouette(g: GraphicsLike, type: ItemType, w: number, h: number): void {
+  (DRAWERS[type] ?? drawFallback)(g, w, h, accentFor(type));
+}

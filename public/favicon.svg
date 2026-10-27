@@ -1,5 +1,53 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-  <rect width="48" height="48" rx="10" fill="#d9704f"/>
-  <rect x="10" y="10" width="28" height="10" rx="4" fill="#fbf3e7"/>
-  <rect x="10" y="24" width="28" height="14" rx="4" fill="#4f9d8c"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="28%" r="85%">
+      <stop offset="0%" stop-color="#FCDCC3"/>
+      <stop offset="100%" stop-color="#E68266"/>
+    </radialGradient>
+    <linearGradient id="mug" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5CC2B3"/>
+      <stop offset="60%" stop-color="#3FA99B"/>
+      <stop offset="100%" stop-color="#2A7D72"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EBC39C"/>
+      <stop offset="100%" stop-color="#D49A6A"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  
+  <g transform="translate(512 512) scale(1) translate(-512 -512)">
+    <!-- rafa düşen yumuşak gölge -->
+    <ellipse cx="512" cy="742" rx="250" ry="34" fill="#3B2433" opacity="0.22" filter="url(#soft)"/>
+    <!-- raf -->
+    <rect x="232" y="708" width="560" height="44" rx="22" fill="url(#wood)"/>
+    <rect x="252" y="714" width="520" height="8" rx="4" fill="#FFFFFF" opacity="0.4"/>
+    <rect x="232" y="738" width="560" height="14" rx="7" fill="#A86E45" opacity="0.55"/>
+    <!-- fincan kulbu -->
+    <path d="M 640 470 C 760 470 760 640 640 640" fill="none" stroke="#2A7D72" stroke-width="46" stroke-linecap="round"/>
+    <path d="M 640 470 C 742 470 742 640 640 640" fill="none" stroke="#3FA99B" stroke-width="30" stroke-linecap="round"/>
+    <!-- fincan gövdesi -->
+    <path d="M 316 404 L 708 404 L 686 640 Q 680 712 606 712 L 418 712 Q 344 712 338 640 Z" fill="url(#mug)"/>
+    <!-- ağız kenarı (krem) -->
+    <rect x="300" y="382" width="424" height="52" rx="26" fill="#FFF6EC"/>
+    <rect x="322" y="398" width="380" height="18" rx="9" fill="#2A7D72" opacity="0.35"/>
+    <!-- gövde parlaması -->
+    <path d="M 372 466 Q 376 590 420 664" fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" opacity="0.35"/>
+    <!-- yüz -->
+    <circle cx="452" cy="548" r="30" fill="#4A3443"/>
+    <circle cx="580" cy="548" r="30" fill="#4A3443"/>
+    <circle cx="462" cy="536" r="10" fill="#FFFFFF" opacity="0.9"/>
+    <circle cx="590" cy="536" r="10" fill="#FFFFFF" opacity="0.9"/>
+    <path d="M 478 606 Q 516 640 554 606" fill="none" stroke="#4A3443" stroke-width="16" stroke-linecap="round"/>
+    <!-- buhar -->
+    <path d="M 450 344 C 410 300 490 270 450 220" fill="none" stroke="#FFF6EC" stroke-width="22" stroke-linecap="round" opacity="0.92"/>
+    <path d="M 574 344 C 534 296 614 262 574 206" fill="none" stroke="#FFF6EC" stroke-width="22" stroke-linecap="round" opacity="0.92"/>
+    <!-- ışıltı -->
+    <path d="M 742 238 Q 748 282 792 288 Q 748 294 742 338 Q 736 294 692 288 Q 736 282 742 238 Z" fill="#FFD36B"/>
+    <circle cx="282" cy="300" r="14" fill="#FFF6EC" opacity="0.85"/>
+  </g>
 </svg>

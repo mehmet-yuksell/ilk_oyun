@@ -99,7 +99,7 @@ export function openSettingsPanel(scene: Phaser.Scene, options: SettingsPanelOpt
     addRow(iconGlobe, t('languageLabel', lang));
     const seg = createSegmented(
       scene,
-      rowRight - 61,
+      rowRight - 71,
       y,
       [
         { label: 'TR', value: 'tr' },

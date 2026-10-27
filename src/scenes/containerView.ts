@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { bakeCentered } from './bake';
 import type { CanvasGraphics } from './canvasGraphics';
-import { accentFor, ITEM_FOOT, strokeArc } from './itemVisuals';
+import { accentFor, drawItemSilhouette, ITEM_FOOT, strokeArc } from './itemVisuals';
 import { COLORS, EASE, hexToNum } from './theme';
 
 /**
@@ -197,17 +197,17 @@ function drawLockBadge(g: CanvasGraphics): void {
 }
 
 /**
- * "Tek türlü kap" rozeti: türün aksan rengi + (renk körü dostu) o türün baş harfi değil, renkten
- * bağımsız bir işaret olarak türün KÜÇÜK SİLUETİ -- bkz. Faz 7. Şimdilik halka + iç nokta.
+ * "Tek türlü kap" rozeti (Faz 7, renk körü dostu): türün aksan renginde halka + İÇİNDE o türün küçük
+ * SİLUETİ (fincan, kitap, saksı...). Eskiden yalnızca renkli halka + noktaydı -- renk ayırt edemeyen
+ * oyuncu hangi türün kabul edildiğini anlayamıyordu; şimdi şekil tek başına yeterli.
  */
 function drawTypeBadge(g: CanvasGraphics, acceptedType: string): void {
   const color = hexToNum(accentFor(acceptedType));
-  g.fillStyle(hexToNum(COLORS.surface), 0.97);
-  g.fillCircle(0, 0, 13);
-  g.lineStyle(3.4, color, 1);
-  g.strokeCircle(0, 0, 11);
-  g.fillStyle(color, 1);
-  g.fillCircle(0, 0, 5);
+  g.fillStyle(hexToNum(COLORS.surface), 0.98);
+  g.fillCircle(0, 0, 18);
+  g.lineStyle(3, color, 1);
+  g.strokeCircle(0, 0, 16.5);
+  drawItemSilhouette(g, acceptedType, 22, 15);
 }
 
 export class ContainerView {
@@ -237,8 +237,8 @@ export class ContainerView {
     this.root.add([this.halo, this.frame]);
 
     if (onlyAccepts) {
-      const key = bakeCentered(scene, `badge-type-${onlyAccepts}`, { width: 32, height: 32 }, (g) => drawTypeBadge(g, onlyAccepts));
-      this.root.add(scene.add.image(geo.width / 2 - 17, -geo.height / 2 + 17, key).setDisplaySize(32, 32));
+      const key = bakeCentered(scene, `badge-type2-${onlyAccepts}`, { width: 40, height: 40 }, (g) => drawTypeBadge(g, onlyAccepts));
+      this.root.add(scene.add.image(geo.width / 2 - 20, -geo.height / 2 + 20, key).setDisplaySize(40, 40));
     }
   }
 

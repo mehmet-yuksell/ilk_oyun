@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { bakeCentered } from './bake';
 import { COLORS, EASE, hexToNum, mix, shadeHex, textStyle, type TextRole } from './theme';
+import { cssToLogical } from './viewport';
 
 /**
  * Ortak UI bileşenleri. Butonlar pişmiş dokudan (bkz. bake.ts): yumuşak degrade yüz + altta hafif
@@ -8,10 +9,16 @@ import { COLORS, EASE, hexToNum, mix, shadeHex, textStyle, type TextRole } from 
  *
  * Basılma hissi: parmak değince yüz küçülür ve dudağa doğru iner (scale-down), bırakınca Back.Out
  * ile geri yayılır ve eylem o anda tetiklenir; parmak dışarı kayarsa basış iptal olur.
- * Dokunma alanı her zaman en az 48x48.
+ * Dokunma alanı her zaman en az 48x48 CSS px (≈ dp) -- mantıksal birimde değil (bkz. minTouch).
  */
 
+/** Android/iOS önerisi: en az 48 dp (CSS px) dokunma hedefi. */
 export const MIN_TOUCH = 48;
+
+/** MIN_TOUCH'ın bu sahnedeki mantıksal karşılığı (telefonda ~66 birim). */
+export function minTouch(scene: Phaser.Scene): number {
+  return Math.max(MIN_TOUCH, cssToLogical(scene, MIN_TOUCH));
+}
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'sage' | 'honey';
 
@@ -157,7 +164,7 @@ export function createButton(scene: Phaser.Scene, opts: ButtonOptions): UIButton
   drawIcon(true);
   layoutContent();
 
-  const zone = scene.add.zone(0, 0, Math.max(MIN_TOUCH, opts.width), Math.max(MIN_TOUCH, opts.height + LIP)).setInteractive({ useHandCursor: true });
+  const zone = scene.add.zone(0, 0, Math.max(minTouch(scene), opts.width), Math.max(minTouch(scene), opts.height + LIP)).setInteractive({ useHandCursor: true });
   root.add([base, faceGroup, zone]);
 
   let enabled = true;
@@ -219,7 +226,7 @@ export function createIconButton(
   onTap: () => void,
   options: { size?: number; variant?: ButtonVariant; isBlocked?: () => boolean; onPress?: () => void } = {},
 ): UIButton {
-  const size = options.size ?? 46;
+  const size = options.size ?? 50;
   const btn = createButton(scene, {
     x,
     y,
@@ -332,7 +339,7 @@ export function createToggle(
   const track = scene.add.graphics();
   const knobShadow = scene.add.circle(0, 2, h / 2 - 4, hexToNum(COLORS.overlay), 0.18);
   const knob = scene.add.circle(0, 0, h / 2 - 4, 0xffffff, 1);
-  const zone = scene.add.zone(0, 0, Math.max(MIN_TOUCH, hitWidth), MIN_TOUCH).setInteractive({ useHandCursor: true });
+  const zone = scene.add.zone(0, 0, Math.max(minTouch(scene), hitWidth), minTouch(scene)).setInteractive({ useHandCursor: true });
   root.add([track, knobShadow, knob, zone]);
 
   let current = value;
@@ -378,7 +385,7 @@ export function createSegmented(
   value: string,
   onChange: (value: string) => void,
 ): Phaser.GameObjects.Container {
-  const segW = 58;
+  const segW = 68;
   const h = 36;
   const w = segW * options.length + 6;
   const root = scene.add.container(x, y);
@@ -396,7 +403,7 @@ export function createSegmented(
   options.forEach((opt, i) => {
     const label = scene.add.text(segX(i), -1, opt.label, textStyle('buttonSmall', { color: i === index ? COLORS.cream : COLORS.inkSoft })).setOrigin(0.5);
     labels.push(label);
-    const zone = scene.add.zone(segX(i), 0, segW, MIN_TOUCH).setInteractive({ useHandCursor: true });
+    const zone = scene.add.zone(segX(i), 0, Math.max(segW, minTouch(scene) * 0.9), minTouch(scene)).setInteractive({ useHandCursor: true });
     zone.on('pointerup', () => {
       if (i === index) return;
       index = i;

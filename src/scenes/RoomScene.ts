@@ -19,7 +19,7 @@ import { themeForLevel } from '../config/tuning';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { itemLabel, roomName, t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
-import { addPanelCard, addRibbon, createButton, createIconButton, createStarChip, type UIButton } from './ui';
+import { addPanelCard, addRibbon, createButton, createIconButton, createStarChip, minTouch, type UIButton } from './ui';
 import { iconCalendar, iconGear, iconGift, iconGrid, iconTrophy } from './icons';
 import { openAchievementsPanel, openDailyPanel, showAchievementToasts } from './progressUI';
 import { applyAchievements } from '../services/achievements';
@@ -139,11 +139,11 @@ export class RoomScene extends Phaser.Scene {
     // üst şerit
     this.starChip = createStarChip(this, insets.left + 46, topBarY, bakeStar(this, 22, true), this.saveData.stars);
     createIconButton(this, w - insets.right - 30, topBarY, iconGear, () => this.openSettings(), { onPress: () => this.click(), isBlocked: () => this.modalOpen });
-    createIconButton(this, w - insets.right - 88, topBarY, iconGrid, () => fadeToScene(this, 'LevelSelectScene'), {
+    createIconButton(this, w - insets.right - 98, topBarY, iconGrid, () => fadeToScene(this, 'LevelSelectScene'), {
       onPress: () => this.click(),
       isBlocked: () => this.modalOpen,
     });
-    createIconButton(this, w - insets.right - 146, topBarY, iconTrophy, () => this.openAchievements(), {
+    createIconButton(this, w - insets.right - 166, topBarY, iconTrophy, () => this.openAchievements(), {
       onPress: () => this.click(),
       isBlocked: () => this.modalOpen,
     });
@@ -386,7 +386,7 @@ export class RoomScene extends Phaser.Scene {
         }
       }
 
-      const zoneSize = Math.max(48, size * 1.1);
+      const zoneSize = Math.max(minTouch(this), size * 1.1);
       const zone = this.add.zone(0, 0, zoneSize, zoneSize);
       card.add(zone);
       if (!restored) {

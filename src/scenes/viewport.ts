@@ -110,3 +110,13 @@ export function installResizeHandler(game: Phaser.Game): void {
   window.addEventListener('resize', schedule);
   window.addEventListener('orientationchange', schedule);
 }
+
+/**
+ * CSS pikselini (≈ Android dp) bu sahnenin mantıksal birimine çevirir. Telefonda 1 mantıksal birim
+ * ≈ 0.72 CSS px olduğundan "48" mantıksal birim gerçekte ~35 px eder -- dokunma hedefleri gibi
+ * FİZİKSEL ölçüler her zaman bununla hesaplanmalı (bkz. ui.ts minTouch, DEVLOG Faz 7).
+ */
+export function cssToLogical(scene: Phaser.Scene, cssPx: number): number {
+  const zoom = scene.cameras.main.zoom || 1;
+  return (cssPx * renderScale()) / zoom;
+}

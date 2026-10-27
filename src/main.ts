@@ -75,15 +75,24 @@ async function boot(): Promise<void> {
   // Uygulama arka plana gidince oyun döngüsünü tamamen durdurur (pil/CPU tasarrufu, garip ara
   // durumları önler). İlerleme zaten her anlamlı değişiklikte (hamle, yıldız, yenileme) senkron
   // olarak localStorage'a kaydedildiği için burada ayrıca bir kayıt çağrısına gerek yok.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
+  // Faz 7: native'de Capacitor'ın appStateChange olayı da dinlenir -- bazı Android WebView'lerde
+  // visibilitychange gecikiyor/gelmiyor (müzik arka planda çalmaya devam edebiliyordu). İki kaynak
+  // aynı idempotent işlevi çağırır; dönüşte kamera yeniden sığdırılır (arkadayken boyut değişmiş olabilir).
+  let backgrounded = false;
+  const setBackgrounded = (hidden: boolean) => {
+    if (hidden === backgrounded) return;
+    backgrounded = hidden;
+    if (hidden) {
       game.loop.sleep();
       audioEngine.setSuspended(true);
     } else {
       game.loop.wake();
       audioEngine.setSuspended(false);
+      window.dispatchEvent(new Event('resize'));
     }
-  });
+  };
+  document.addEventListener('visibilitychange', () => setBackgrounded(document.hidden));
+  void CapacitorApp.addListener('appStateChange', ({ isActive }) => setBackgrounded(!isActive)).catch(() => {});
 
   // Android donanım geri tuşu (web'de hiç tetiklenmez): her sahne 'hardware-back' olayını kendisi ele
   // alır (açık panel varsa önce onu kapatır); ana ekranda uygulamadan çıkılır. Eskiden burada

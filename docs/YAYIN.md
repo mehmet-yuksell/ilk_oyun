@@ -10,16 +10,16 @@ tamamen elle, güvenli bir yerde (şifre yöneticisi + yedek) yapılması gereke
 `android/app/build.gradle` içinde:
 
 ```gradle
-versionCode 2
-versionName "1.1.0"
+versionCode 3
+versionName "1.2.0"
 ```
 
 - `versionCode`: Play Store'un güncellemeleri ayırt etmesi için kullandığı, her yüklemede
   KESİNLİKLE artması gereken bir tam sayı (asla azaltılamaz, asla tekrar kullanılamaz).
 - `versionName`: kullanıcıya görünen sürüm metni (serbest format, ör. "1.1.0").
 
-Her yeni Play Store yüklemesinden önce ikisini de güncelleyin (ör. `versionCode 3`,
-`versionName "1.1.1"` bir hata düzeltmesi için; `versionName "1.2.0"` yeni bir özellik için).
+Her yeni Play Store yüklemesinden önce ikisini de güncelleyin (ör. `versionCode 4`,
+`versionName "1.2.1"` bir hata düzeltmesi için; `versionName "1.3.0"` yeni bir özellik için).
 
 ## 2. Proguard / minify
 

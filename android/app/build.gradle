@@ -10,8 +10,8 @@ android {
         // Her Play Store yüklemesinde versionCode artmalı (negatif değil, her zaman öncekinden
         // büyük bir tam sayı); versionName kullanıcıya görünen sürüm metnidir. Bu "Cozy Sort"
         // profesyonelleştirme geçişiyle 1.1.0'a çıkarıldı (bkz. docs/YAYIN.md).
-        versionCode 2
-        versionName "1.1.0"
+        versionCode 3
+        versionName "1.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
