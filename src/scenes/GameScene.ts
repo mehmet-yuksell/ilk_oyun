@@ -18,7 +18,7 @@ import { computePar } from '../core/solver';
 import { MYSTERY_TYPE, createItemVisual, resetItemVisual } from './itemVisuals';
 import { ContainerView } from './containerView';
 import { JUICE, DIFFICULTY, themeForLevel } from '../config/tuning';
-import { COLORS, EASE, FONT_FAMILY, TYPE_SCALE, hexToNum, textStyle } from './theme';
+import { COLORS, EASE, hexToNum, textStyle } from './theme';
 import { BASE_HEIGHT, BASE_WIDTH, setupView, toWorld, type View } from './viewport';
 import { drawCozyBackground } from './background';
 import { readSafeAreaInsets } from './safeArea';
@@ -36,6 +36,12 @@ import type { ActiveObstacles, Button, FeedbackKind, Layout, SessionMode } from 
 import { createButton, createIconButton } from './ui';
 import { iconBack, iconGear, iconPlus, iconUndo } from './icons';
 import { openSettingsPanel, type SettingsPanelHandle } from './settingsPanel';
+import { showAchievementToasts } from './progressUI';
+import { addWallDecor } from './wallDecor';
+import { addRibbon } from './ui';
+import { themeIndexForLevel, THEME_CHANGE_EVERY_LEVELS } from './theme';
+import type { TranslationKey as ChapterKey } from '../i18n/translations';
+import { applyAchievements } from '../services/achievements';
 import { GameJuiceFx } from './gameAnimations';
 import { ParticleFx, bakeStar } from './fx';
 import { GameInputController } from './gameInput';
@@ -105,6 +111,9 @@ export class GameScene extends Phaser.Scene {
   private layouts = new Map<string, Layout>();
   private containerViews = new Map<string, ContainerView>();
   private layoutSignature = '';
+  private gridTopOffset = 0;
+  private decor: Phaser.GameObjects.Container | null = null;
+  private idleTimer: Phaser.Time.TimerEvent | null = null;
   private itemPool = new Map<string, Phaser.GameObjects.Container[]>();
   private selectedId: string | null = null;
   private comboCount = 0;
@@ -171,6 +180,8 @@ export class GameScene extends Phaser.Scene {
     this.layouts = new Map();
     this.containerViews = new Map();
     this.layoutSignature = '';
+    this.decor = null;
+    this.idleTimer = null;
     this.itemPool = new Map();
     this.selectedId = null;
     this.comboCount = 0;
@@ -202,6 +213,7 @@ export class GameScene extends Phaser.Scene {
       getLayout: (id) => this.layouts.get(id),
       getSlotHeight: () => this.slotHeight,
       isAnimating: () => this.isAnimating,
+      setHint: (id, on) => this.containerViews.get(id)?.setHint(on),
     });
     this.inputController = new GameInputController({
       isAnimating: () => this.isAnimating || this.settingsPanel !== null,
@@ -306,7 +318,10 @@ export class GameScene extends Phaser.Scene {
     this.refreshAll();
     this.checkStuckOrWin();
 
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.inputController.onPointerDown(toWorld(this, p)));
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      this.scheduleIdleHint();
+      this.inputController.onPointerDown(toWorld(this, p));
+    });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.inputController.onPointerMove(toWorld(this, p)));
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.inputController.onPointerUp(toWorld(this, p)));
 
@@ -317,6 +332,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.fx.scheduleBlink();
+    this.scheduleIdleHint();
+    this.maybeShowChapterBanner();
     this.maybeShowObstacleHints(loaded.obstacles);
   }
 
@@ -453,6 +470,7 @@ export class GameScene extends Phaser.Scene {
     // Az sayıda satır olan (erken) seviyelerde dikey boşluk ızgarayı ORTALAMAK için kullanılır --
     // aksi halde kaplar üstte kalıp altta "boş" hissi veren büyük bir alan bırakırdı (bkz. "boşluk < %25").
     const topOffset = this.gridTop + verticalSlack * 0.48;
+    this.gridTopOffset = topOffset;
 
     ids.forEach((id, index) => {
       const container = this.gameState.containers.find((c) => c.id === id)!;
@@ -483,6 +501,7 @@ export class GameScene extends Phaser.Scene {
       this.layoutSignature = signature;
       this.destroyContainerViews();
       this.clearItemPool();
+      this.placeDecor();
     }
     this.drawFrames();
     this.render();
@@ -543,38 +562,29 @@ export class GameScene extends Phaser.Scene {
 
     this.saveData = { ...this.saveData, seenHints: [...this.saveData.seenHints, unseen.key] };
     this.saveService.save(this.saveData);
-    this.time.delayedCall(700, () => this.showHintBubble(t(unseen.titleKey, this.lang), t(unseen.bodyKey, this.lang)));
+    this.time.delayedCall(this.isChapterStart() ? 2900 : 700, () => this.showHintBubble(t(unseen.titleKey, this.lang), t(unseen.bodyKey, this.lang)));
   }
 
+  /** İlk görülen engel için ipucu kartı: krem kart + terrakota başlık, aşağıdan kayarak gelir, 3.6 sn sonra söner.
+   * (Eski koyu kutu sahnenin geri kalanından kopuk duruyordu.) Izgaranın üstüne, HUD çiplerinin hemen altına konur. */
   private showHintBubble(title: string, body: string): void {
-    const w = Math.min(this.vp.width - 40, 380);
-    const y = this.safeTop + 158;
-    const container = this.add.container(this.vp.width / 2, y).setDepth(250).setAlpha(0);
-
+    const w = Math.min(this.vp.width - 40, 400);
+    const h = 74;
+    const y = this.gridTop + h / 2 + 2;
+    const container = this.add.container(this.vp.width / 2, y + 16).setDepth(250).setAlpha(0);
     const bg = this.add.graphics();
-    bg.fillStyle(hexToNum(COLORS.ink), 0.92);
-    bg.fillRoundedRect(-w / 2, -32, w, 64, 16);
+    bg.fillStyle(hexToNum(COLORS.overlay), 0.12);
+    bg.fillRoundedRect(-w / 2, -h / 2 + 4, w, h, 20);
+    bg.fillStyle(0xffffff, 0.97);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 20);
+    bg.lineStyle(2, hexToNum(COLORS.honey), 0.9);
+    bg.strokeRoundedRect(-w / 2 + 1, -h / 2 + 1, w - 2, h - 2, 19);
     container.add(bg);
-    container.add(
-      this.add
-        .text(0, -14, title, { fontFamily: FONT_FAMILY, fontSize: '14px', fontStyle: '800', color: COLORS.cream })
-        .setOrigin(0.5),
-    );
-    container.add(
-      this.add
-        .text(0, 10, body, {
-          fontFamily: FONT_FAMILY,
-          fontSize: `${TYPE_SCALE.caption}px`,
-          color: COLORS.cream,
-          align: 'center',
-          wordWrap: { width: w - 32 },
-        })
-        .setOrigin(0.5),
-    );
-
-    this.tweens.add({ targets: container, alpha: 1, duration: 220 });
-    this.time.delayedCall(3200, () => {
-      this.tweens.add({ targets: container, alpha: 0, duration: 260, onComplete: () => container.destroy() });
+    container.add(this.add.text(0, -16, title, textStyle('buttonSmall', { color: COLORS.terracotta })).setOrigin(0.5));
+    container.add(this.add.text(0, 12, body, textStyle('caption', { color: COLORS.ink, align: 'center', wordWrap: { width: w - 36 } })).setOrigin(0.5));
+    this.tweens.add({ targets: container, alpha: 1, y, duration: 320, ease: EASE.back });
+    this.time.delayedCall(3600, () => {
+      this.tweens.add({ targets: container, alpha: 0, y: y - 12, duration: 260, ease: EASE.in, onComplete: () => container.destroy() });
     });
   }
 
@@ -733,6 +743,14 @@ export class GameScene extends Phaser.Scene {
     }
     this.saveService.save(saved);
     this.saveData = saved;
+    // Başarımlar (Faz 6): hedefe ulaşanlar açılır, küçük bonus eklenir; bildirim panel yıldızlarından sonra.
+    const ach = applyAchievements(saved);
+    if (ach.unlocked.length > 0) {
+      saved = ach.data;
+      this.saveService.save(saved);
+      this.saveData = saved;
+      this.time.delayedCall(2200, () => showAchievementToasts(this, ach.unlocked, this.lang, () => this.feedback('star', 2)));
+    }
 
     this.analytics.track({
       name: 'level_win',
@@ -818,6 +836,48 @@ export class GameScene extends Phaser.Scene {
         this.settingsPanel = null;
       },
     });
+  }
+
+  /** Duvar dekoru: ızgaranın üstündeki boş alana, bölüm temasına göre (yer yoksa çizilmez). */
+  private placeDecor(): void {
+    this.decor?.destroy();
+    this.decor = null;
+    const available = this.gridTopOffset - this.gridTop;
+    const theme = themeForLevel(this.levelNumber ?? 1);
+    this.decor = addWallDecor(this, theme, this.vp.width / 2, this.gridTop + available / 2 - 4, available);
+  }
+
+  /** İlk 3 seviyede oyuncu 8 sn hiçbir şeye dokunmazsa el ipucu nazikçe yeniden gösterilir. */
+  private scheduleIdleHint(): void {
+    this.idleTimer?.remove(false);
+    this.idleTimer = null;
+    if (this.sessionMode !== 'progress' || (this.levelNumber ?? 99) > 3) return;
+    this.idleTimer = this.time.delayedCall(8000, () => {
+      if (this.isAnimating || this.gameOver || this.settingsPanel || this.tutorial.isActive || this.selectedId) return;
+      this.tutorial.start();
+    });
+  }
+
+  /** Yeni bir bölümün (oda temasının) ilk seviyesinde kısa bir "Yeni bölüm" bandı. */
+  private isChapterStart(): boolean {
+    const n = this.levelNumber;
+    return this.sessionMode === 'progress' && n !== null && n > 1 && (n - 1) % THEME_CHANGE_EVERY_LEVELS === 0;
+  }
+
+  private maybeShowChapterBanner(): void {
+    const n = this.levelNumber;
+    if (!this.isChapterStart() || n === null) return;
+    const name = t(`chapter${themeIndexForLevel(n)}` as ChapterKey, this.lang);
+    const banner = this.add.container(this.vp.width / 2, this.vp.height * 0.42).setDepth(350).setAlpha(0).setScale(0.8);
+    addRibbon(this, banner, 0, Math.min(this.vp.width - 80, 340), themeForLevel(n).accent, name);
+    const cap = this.add.text(0, -46, t('newChapter', this.lang), textStyle('caption', { color: COLORS.ink })).setOrigin(0.5);
+    const capBg = this.add.graphics();
+    capBg.fillStyle(0xffffff, 0.95);
+    capBg.fillRoundedRect(-cap.width / 2 - 14, -60, cap.width + 28, 28, 14);
+    banner.add([capBg, cap]);
+    this.tweens.add({ targets: banner, alpha: 1, scale: 1, duration: 420, delay: 350, ease: EASE.back });
+    this.tweens.add({ targets: banner, alpha: 0, y: banner.y - 30, duration: 360, delay: 2300, ease: EASE.in, onComplete: () => banner.destroy() });
+    this.particles.sparkle(this.vp.width / 2, this.vp.height * 0.42, 10);
   }
 
   private onHardwareBack(): void {

@@ -122,3 +122,13 @@ export const iconPlay: IconDrawer = (g, c) => {
   g.fillStyle(c, 1);
   g.fillTriangle(-5, -8, -5, 8, 8, 0);
 };
+
+export const iconTrophy: IconDrawer = (g, c) => {
+  g.fillStyle(c, 1);
+  g.fillRoundedRect(-6.5, -9, 13, 11, { tl: 1.5, tr: 1.5, bl: 6, br: 6 });
+  g.fillRect(-1.6, 1, 3.2, 5);
+  g.fillRoundedRect(-6, 6, 12, 3.4, 1.5);
+  g.lineStyle(2.4, c, 1);
+  strokeArc(g, -7, -4.5, 3.6, 90, 270, 8);
+  strokeArc(g, 7, -4.5, 3.6, -90, 90, 8);
+};

@@ -29,6 +29,8 @@ export interface SaveData {
   /** Seviye başına EN İYİ yıldız derecelendirmesi (1-3), anahtar = seviye numarası. Faz 5'te eklendi
    * (seviye seçim ekranı + yıldız toplama). Eski kayıtlarda boş nesneyle başlar. */
   readonly levelStars: Readonly<Record<string, number>>;
+  /** Açılmış başarım kimlikleri (Faz 6, bkz. services/achievements.ts). Eski kayıtlarda boş. */
+  readonly achievements: readonly string[];
 }
 
 export function createDefaultSaveData(): SaveData {
@@ -45,6 +47,7 @@ export function createDefaultSaveData(): SaveData {
     hapticEnabled: true,
     seenHints: [],
     levelStars: {},
+    achievements: [],
   };
 }
 
@@ -81,6 +84,7 @@ export function migrateSaveData(raw: unknown): SaveData {
 
   const ls = merged.levelStars;
   if (!ls || typeof ls !== 'object' || Array.isArray(ls)) merged.levelStars = {};
+  if (!Array.isArray(merged.achievements)) merged.achievements = [];
 
   merged.version = SAVE_DATA_VERSION;
   return merged as unknown as SaveData;

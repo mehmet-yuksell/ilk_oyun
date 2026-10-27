@@ -246,6 +246,20 @@ export class ContainerView {
     return this.geo.width;
   }
 
+  /** Öğretici/ipucu vurgusu: seçimden daha yumuşak, yavaş nabız atan hale (seçiliyse dokunmaz). */
+  setHint(on: boolean): void {
+    if (this.selected) return;
+    this.haloTween?.stop();
+    this.haloTween = null;
+    this.scene.tweens.killTweensOf(this.halo);
+    if (on) {
+      this.halo.setAlpha(0);
+      this.haloTween = this.scene.tweens.add({ targets: this.halo, alpha: { from: 0.15, to: 0.75 }, duration: 650, yoyo: true, repeat: -1, ease: EASE.inOut });
+    } else {
+      this.scene.tweens.add({ targets: this.halo, alpha: 0, duration: 200, ease: EASE.out });
+    }
+  }
+
   setSelected(selected: boolean): void {
     if (this.selected === selected) return;
     this.selected = selected;

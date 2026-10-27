@@ -20,7 +20,9 @@ import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { itemLabel, roomName, t } from '../i18n/translations';
 import type { Language } from '../i18n/translations';
 import { addPanelCard, addRibbon, createButton, createIconButton, createStarChip, type UIButton } from './ui';
-import { iconCalendar, iconGear, iconGift, iconGrid } from './icons';
+import { iconCalendar, iconGear, iconGift, iconGrid, iconTrophy } from './icons';
+import { openAchievementsPanel, openDailyPanel, showAchievementToasts } from './progressUI';
+import { applyAchievements } from '../services/achievements';
 import { ParticleFx, bakeStar } from './fx';
 import { openSettingsPanel } from './settingsPanel';
 
@@ -141,6 +143,10 @@ export class RoomScene extends Phaser.Scene {
       onPress: () => this.click(),
       isBlocked: () => this.modalOpen,
     });
+    createIconButton(this, w - insets.right - 146, topBarY, iconTrophy, () => this.openAchievements(), {
+      onPress: () => this.click(),
+      isBlocked: () => this.modalOpen,
+    });
 
     this.drawLogo(w / 2, logoY);
     this.drawRoomCard(w / 2, cardY, Math.min(w - 40, 460));
@@ -159,7 +165,7 @@ export class RoomScene extends Phaser.Scene {
       icon: iconGift,
       onPress: () => this.click(),
       isBlocked: () => this.modalOpen,
-      onTap: () => this.onClaimDailyReward(),
+      onTap: () => this.openDaily(),
     });
     createButton(this, {
       x: w / 2 + btnW / 2 + 6,
@@ -176,6 +182,8 @@ export class RoomScene extends Phaser.Scene {
 
     this.createPlayButton(w / 2, playY);
     this.refresh();
+    // Önceki oturumda (ör. oyun sahnesinde) hedefe ulaşmış ama bildirimi görülmemiş başarımlar.
+    this.time.delayedCall(500, () => this.checkAchievements());
     // Sahne örneği yeniden kullanılır; özel olay dinleyicisi kapanışta temizlenmeli (birikmesin).
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off('hardware-back'));
     this.events.on('hardware-back', (exit: () => void) => {
@@ -336,8 +344,8 @@ export class RoomScene extends Phaser.Scene {
   }
 
   private updateDailyRewardButton(): void {
+    // Buton her zaman açık: alındıktan sonra da seri panelini (yarının ödülü) gösterir.
     const claimable = canClaimDailyReward(this.saveData.dailyReward, todayKey(new Date()));
-    this.dailyRewardButton.setEnabled(claimable);
     this.dailyRewardButton.setLabel(claimable ? t('dailyRewardButton', this.lang) : t('dailyRewardClaimed', this.lang));
   }
 
@@ -536,6 +544,7 @@ export class RoomScene extends Phaser.Scene {
     this.analytics.track({ name: 'room_item_restored', roomId: this.room.id, itemId: placed.id, styleIndex });
     this.refresh(true);
     this.playRestoreFx(placed);
+    this.time.delayedCall(600, () => this.checkAchievements());
 
     if (isRoomComplete(outcome.progress)) {
       this.time.delayedCall(700, () => this.onRoomComplete());
@@ -606,6 +615,44 @@ export class RoomScene extends Phaser.Scene {
     this.feedback('success');
     this.flyRewardStars(before, this.saveData.stars);
     this.updateDailyRewardButton();
+    this.drawRoom();
+    this.time.delayedCall(900, () => this.checkAchievements());
+  }
+
+  private openDaily(): void {
+    if (this.modalOpen) return;
+    this.modalOpen = true;
+    openDailyPanel(this, this.saveData.dailyReward, DAILY_REWARD_BASE, this.lang, {
+      onPress: () => this.click(),
+      onClose: () => {
+        this.modalOpen = false;
+      },
+      onClaim: () => this.onClaimDailyReward(),
+    });
+  }
+
+  private openAchievements(): void {
+    if (this.modalOpen) return;
+    this.modalOpen = true;
+    openAchievementsPanel(this, this.saveData, this.lang, {
+      onPress: () => this.click(),
+      onClose: () => {
+        this.modalOpen = false;
+      },
+    });
+  }
+
+  /** Hedefe ulaşan başarımları açar (küçük yıldız bonusu), kaydeder ve bildirim gösterir. */
+  private checkAchievements(): void {
+    const result = applyAchievements(this.saveData);
+    if (result.unlocked.length === 0) return;
+    this.saveData = result.data;
+    this.saveService.save(this.saveData);
+    this.starChip.setValue(this.saveData.stars);
+    showAchievementToasts(this, result.unlocked, this.lang, () => {
+      if (this.saveData.soundEnabled) this.soundService.star(2);
+      if (this.saveData.hapticEnabled) this.hapticService.success();
+    });
     this.drawRoom();
   }
 

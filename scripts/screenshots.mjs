@@ -190,6 +190,33 @@ if (want('lost')) {
   await shot('10-lost');
 }
 
+if (want('decor')) {
+  for (const lvl of [11, 21, 31, 41]) {
+    await freshSave({ currentLevel: lvl, stars: 60 });
+    await waitScene('RoomScene', 400);
+    await startScene('GameScene', { mode: 'progress', levelNumber: lvl });
+    await waitScene('GameScene', 1200);
+    await shot(`11-decor-level${lvl}`);
+  }
+}
+
+if (want('progress')) {
+  const levelStars = {};
+  for (let i = 1; i < 14; i++) levelStars[i] = 3;
+  await freshSave({ currentLevel: 14, stars: 90, levelStars, achievements: [], dailyReward: { lastClaimedDate: null, streak: 0 } });
+  await waitScene('RoomScene', 2600);
+  await shot('12-achievement-toast');
+  await wait(3600);
+  await page.evaluate(() => window.__cozy.scene.getScene('RoomScene').openAchievements());
+  await wait(700);
+  await shot('13-achievements');
+  await startScene('RoomScene');
+  await waitScene('RoomScene', 4000);
+  await page.evaluate(() => window.__cozy.scene.getScene('RoomScene').openDaily());
+  await wait(700);
+  await shot('14-daily');
+}
+
 console.log('Aktif sahne:', await activeKey());
 if (errors.length) {
   console.log('KONSOL HATALARI:');

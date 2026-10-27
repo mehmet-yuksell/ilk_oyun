@@ -270,3 +270,34 @@ efekt dokusu, sonra sabit).
   tekrarlayarak yıldız biriktirilebilirdi. Yalnızca en iyi derecelendirme güncellenir, panelde "+0" yerine kısa bir not.
 - Dil seçimi oyun içi ayarlarda gizli (dil değişimi ekranı yeniden kurar → seviye durumu kaybolurdu).
 - Masaüstü yatay pencerede FPS ölçümleri başsız yazılım GPU'sunda alındı — gerçek cihaz değerleri değildir.
+
+---
+
+## FAZ 6 — İlk izlenim ve ilerleme hissi
+
+**Yapılanlar**
+- **Öğretici (metinsiz)** yenilendi (`gameTutorial.ts`): kaynak ve hedef kap nabız atarak parlar (`ContainerView.setHint`),
+  pişmiş el figürü kaynağa **dokunur** (dokunma halkası), yay çizerek hedefe gider ve tekrar dokunur. Aynı türün üstüne
+  koyma hamlesi tercih edilir (kuralı en açık gösteren hamle). İlk seviyede bir kez otomatik; **ilk 3 seviyede 8 sn
+  dokunulmazsa** nazik ipucu olarak yeniden gösterilir. Oyuncu dokunduğu an durur.
+- **Başarımlar** (`services/achievements.ts`, 11 adet): İlk Adım, 10/25/50/100 seviye, Kusursuz (10 seviye 3 yıldız),
+  Yıldız Avcısı (100 seviye yıldızı), Tadilatçı (5 eşya), Yuva Gibi (1 oda), 3 ve 7 günlük seri. Hepsi kayıttan
+  **türetilir** (ayrı sayaç yok), yalnızca açılanlar listesi saklanır (`SaveData.achievements`). Açılınca üstten kayan
+  bildirim + küçük **+5 ★** bonus (bir kez). Ana ekranda kupa ikonu → ilerleme çubuklu başarım paneli. +7 test.
+- **Günlük seri paneli**: Günlük Ödül butonu artık her zaman açılır; 7 günlük şerit (bugün vurgulu, alınan günler bal
+  rengi, her günün ödülü), "Ödülü Al +N" ya da "Yarın gel: +N". Önizleme core'daki saf `claimDailyReward` kaydedilmeden
+  çağrılarak hesaplanır (core değişmedi).
+- **Bölüm dekoru** (`wallDecor.ts`): her oda temasının kendi duvar süsü — perdeli güneşli pencere (şeftali), sarkan saksılar
+  (adaçayı), titreşen ışık zinciri + ay penceresi (lavanta), çerçeveler + saat (bal), kitaplı yüzen raf (puslu mavi).
+  Izgaranın üstündeki boş duvara ölçeklenir; yer yoksa çizilmez (kalabalık ileri seviyeleri kirletmez).
+- **Yeni bölüm bandı**: 11, 21, 31… seviyelerin başında tema renginde kurdele ("Yeni bölüm · Adaçayı Bahçesi") + ışıltı.
+- **Engel ipucu kartı** koyu kutudan krem karta döndü; bölüm bandıyla çakışmasın diye o seviyelerde bant bittikten sonra gelir.
+- Seviye yıldız toplama Faz 5'te (`levelStars`) gelmişti; seviye ekranı başlığında toplam ve başarımlarda kullanılıyor.
+
+**Doğrulama**: build ✓, 20 dosya / 161 test ✓; 20 sahne döngüsü — doku 96'da sabit, bellek 58 MB sabit, hata yok;
+oyun içi 25 döngü — nesne/tween sabit. Ekran görüntüleri: seviye 1 öğretici, 11/21/31/41 dekor + bölüm bandı,
+başarım bildirimi, başarımlar paneli, günlük seri.
+
+**Kararlar**
+- Başarım bonusu küçük (+5 ★) tutuldu: ekonomiyi bozmadan "fark edildim" hissi; zorunlu görev/sayaç yok.
+- Hareketsizlik ipucu yalnızca ilk 3 seviyede — ileri seviyelerde çözümü fısıldamak oyunun zorluğunu bozar.
