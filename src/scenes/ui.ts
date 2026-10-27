@@ -308,3 +308,129 @@ export function addRibbon(scene: Phaser.Scene, container: Phaser.GameObjects.Con
   container.add(scene.add.image(0, y, key).setDisplaySize(size.width, size.height));
   container.add(scene.add.text(0, y - 1, text, textStyle('panelTitle', { color: textColor })).setOrigin(0.5));
 }
+
+export interface UIToggle {
+  readonly root: Phaser.GameObjects.Container;
+  setValue(value: boolean, animate?: boolean): void;
+}
+
+/**
+ * Gerçek bir açma/kapama anahtarı (eski "Açık / Kapalı" hap çifti yerine): adaçayı yeşili ray, beyaz
+ * düğme Back.Out ile kayar. Dokunma alanı satır genişliğinde verilebilir (hitWidth).
+ */
+export function createToggle(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  value: boolean,
+  onChange: (value: boolean) => void,
+  hitWidth = 72,
+): UIToggle {
+  const w = 58;
+  const h = 34;
+  const root = scene.add.container(x, y);
+  const track = scene.add.graphics();
+  const knobShadow = scene.add.circle(0, 2, h / 2 - 4, hexToNum(COLORS.overlay), 0.18);
+  const knob = scene.add.circle(0, 0, h / 2 - 4, 0xffffff, 1);
+  const zone = scene.add.zone(0, 0, Math.max(MIN_TOUCH, hitWidth), MIN_TOUCH).setInteractive({ useHandCursor: true });
+  root.add([track, knobShadow, knob, zone]);
+
+  let current = value;
+  const knobX = (v: boolean) => (v ? w / 2 - h / 2 : -w / 2 + h / 2);
+  const drawTrack = (v: boolean) => {
+    track.clear();
+    track.fillStyle(hexToNum(v ? '#7FB28A' : COLORS.surfaceMuted), 1);
+    track.fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+    track.lineStyle(1.5, hexToNum(v ? '#5E9A6B' : COLORS.inkFaint), 0.8);
+    track.strokeRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+  };
+  const apply = (v: boolean, animate: boolean) => {
+    drawTrack(v);
+    scene.tweens.killTweensOf([knob, knobShadow]);
+    if (animate) scene.tweens.add({ targets: [knob, knobShadow], x: knobX(v), duration: 260, ease: EASE.back });
+    else {
+      knob.x = knobX(v);
+      knobShadow.x = knobX(v);
+    }
+  };
+  apply(current, false);
+  zone.on('pointerup', () => {
+    current = !current;
+    apply(current, true);
+    onChange(current);
+  });
+
+  return {
+    root,
+    setValue(v: boolean, animate = true) {
+      current = v;
+      apply(v, animate);
+    },
+  };
+}
+
+/** İki seçenekli kayan seçici (ör. TR / EN): aktif dilim terrakota "kayar". */
+export function createSegmented(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  options: readonly { label: string; value: string }[],
+  value: string,
+  onChange: (value: string) => void,
+): Phaser.GameObjects.Container {
+  const segW = 58;
+  const h = 36;
+  const w = segW * options.length + 6;
+  const root = scene.add.container(x, y);
+  const track = scene.add.graphics();
+  track.fillStyle(hexToNum(COLORS.surfaceMuted), 1);
+  track.fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+  const thumb = scene.add.graphics();
+  thumb.fillStyle(hexToNum(COLORS.terracotta), 1);
+  thumb.fillRoundedRect(-segW / 2, -h / 2 + 3, segW, h - 6, (h - 6) / 2);
+  root.add([track, thumb]);
+  const segX = (i: number) => -w / 2 + 3 + segW * i + segW / 2;
+  const labels: Phaser.GameObjects.Text[] = [];
+  let index = Math.max(0, options.findIndex((o) => o.value === value));
+  thumb.x = segX(index);
+  options.forEach((opt, i) => {
+    const label = scene.add.text(segX(i), -1, opt.label, textStyle('buttonSmall', { color: i === index ? COLORS.cream : COLORS.inkSoft })).setOrigin(0.5);
+    labels.push(label);
+    const zone = scene.add.zone(segX(i), 0, segW, MIN_TOUCH).setInteractive({ useHandCursor: true });
+    zone.on('pointerup', () => {
+      if (i === index) return;
+      index = i;
+      scene.tweens.add({ targets: thumb, x: segX(i), duration: 240, ease: EASE.back });
+      labels.forEach((l, j) => l.setColor(j === i ? COLORS.cream : COLORS.inkSoft));
+      onChange(opt.value);
+    });
+    root.add([label, zone]);
+  });
+  return root;
+}
+
+/** Yıldız sayacı çipi (krem hap + altın yıldız + sayı). */
+export function createStarChip(scene: Phaser.Scene, x: number, y: number, starKey: string, value: number): { root: Phaser.GameObjects.Container; setValue(v: number): void; star: Phaser.GameObjects.Image } {
+  const root = scene.add.container(x, y);
+  const bg = scene.add.graphics();
+  const text = scene.add.text(14, -1, `${value}`, textStyle('hud')).setOrigin(0, 0.5);
+  const star = scene.add.image(-2, 0, starKey).setDisplaySize(28, 28);
+  const draw = () => {
+    const w = Math.max(84, text.width + 54);
+    bg.clear();
+    bg.fillStyle(0xffffff, 0.92);
+    bg.fillRoundedRect(-22, -20, w, 40, 20);
+    bg.lineStyle(1.5, hexToNum(COLORS.woodLight), 0.8);
+    bg.strokeRoundedRect(-22, -20, w, 40, 20);
+  };
+  draw();
+  root.add([bg, star, text]);
+  return {
+    root,
+    star,
+    setValue(v: number) {
+      text.setText(`${v}`);
+      draw();
+    },
+  };
+}

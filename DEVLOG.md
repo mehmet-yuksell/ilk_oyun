@@ -218,3 +218,55 @@ efekt dokusu, sonra sabit).
 **Kararlar**
 - Eski ses testleri (tap = 1 osilatör + lowpass, complete = 2 osilatör + bandpass) sözleşme olarak korundu.
 - Müzik sahne değil uygulama ömrüne bağlı (sahne geçişlerinde kesilmez).
+
+---
+
+## FAZ 5 — Menü, UI ve sahne geçişleri
+
+**Yapılanlar**
+- **Ana ekran (oda)** yeniden tasarlandı: üstte yıldız çipi + Seviyeler/Ayarlar ikon butonları; iki tonlu "Cozy Sort" logosu
+  (bal rengi kıvrım, hafif süzülme); oda kartı (çevrilmiş oda adı, sayaç, kalın degrade ilerleme çubuğu — yenilemede
+  dolarak artar); oda illüstrasyonu artık ekrandaki boş alana orantılı yerleşiyor (eskiden sabit 960 px koordinatları).
+  Yenilenmemiş mobilyalar koyu mor siluet yerine **"boyanmamış" sıcak bej** — yenilemek = boyamak. Alınabilir eşyaların
+  fiyat rozeti nabız atar (metinsiz ipucu). Altta Günlük Ödül (bal) / Günlük Bulmaca (adaçayı) ikonlu butonlar ve büyük,
+  nabızlı **OYNA** (içinde sıradaki seviye rozeti). Günlük ödülde yıldızlar butondan çipe uçar, sayaç artarak sayar.
+- **Seviye seçim ekranı** (`LevelSelectScene`, yeni): 10'arlı bölümler = oda temaları (Şeftali Sabahı, Adaçayı Bahçesi…),
+  kart durumları: tamamlanmış (bölüm rengi kenar + en iyi 1-3 yıldız) / sıradaki (terrakota, nabızlı hale, ▶) /
+  kilitli (soluk, kilit; dokununca nazik sallanma + ses). Sürükle-kaydır + atalet + sınırda yaylanma; açılışta sıradaki
+  seviye ortalanır. Sabit başlıkta toplam yıldız.
+- **Ayarlar paneli** (`settingsPanel.ts`): ayrı sahne yerine her ekranda açılan katman (oyun içinden de — seviye durumu
+  kaybolmaz). İkonlu satırlar + gerçek animasyonlu anahtarlar (Ses efektleri / Müzik / Titreşim), TR/EN kayan seçici
+  (yalnızca seviye dışında; dil değişince ekran geçişle yenilenir), sürüm etiketi. Eski `SettingsScene` silindi.
+- **Butonlar** her yerde `ui.ts` (basılma/bırakma animasyonu, ≥48 px alan). Eski `gameHud.ts` kaldırıldı.
+- **Oyun HUD'u**: geri + ayarlar ikonları, seviye hapı, iki sayaç çipi ("Hamle 0/23" — kalan hakkı gösteren ince çubuk,
+  son 3 hamlede gül kurusu + nabız; "Kalan eşya"). Izgara üst sınırı güvenli alana göre (eskiden sabit 170 px).
+- **Geçişler**: siyaha fade yerine krem renge fade + içerik hafif kayarak girer/çıkar; tüm `scene.start` çağrıları
+  `fadeToScene` üzerinden (ayarlar/yeniden dene dahil); geçiş sürerken ikinci geçiş isteği yok sayılır.
+- **Splash**: tik kutusu yerine logo + mini ahşap raf; oyunun üç eşyası sırayla rafa zıplar.
+- **i18n**: oda adları ve 60 eşya adı için İngilizce (core'a dokunmadan, `roomName()` / `itemLabel()`).
+- **Android geri tuşu**: her sahne kendisi ele alır (açık panel varsa önce kapanır; ana ekranda çıkış). Eski kodda
+  `game.scene.start('RoomScene')` aktif sahneyi DURDURMADAN Room'u başlatıyordu (iki sahne üst üste) — düzeltildi.
+- **Kayıt**: `SaveData.levelStars` (seviye başına en iyi 1-3 yıldız; eski kayıtlarda boş, bozuk tip onarılır) +
+  `recordLevelStars` / `collectedRatingStars`, +3 test.
+
+**Kritik bulgu ve düzeltme — sekme çökmesi**
+- Sahne döngüsü testinde (Seviyeler→Oyun→Oda) tarayıcı sekmesi ~5. turda **çöktü**. İkiye bölmeli arama (her faz
+  commit'i ayrı çalışma ağacında aynı testle): Faz 1 temiz, **Faz 2'den itibaren** çöküyor.
+- Neden: Phaser `textures.createCanvas` canvas'ı CanvasPool'dan **GPU hızlandırmalı** bağlamla açıyor; `CanvasTexture`
+  her `refresh()`'te `getImageData` ile GPU'dan geri okuyor ("GPU stall due to ReadPixels"). Faz 2+ onlarca kalıcı
+  pişmiş canvas üretiyor.
+- Düzeltme (`bake.ts › createBakedCanvasTexture`): canvas'ı kendimiz, ilk bağlamı `willReadFrequently: true` (CPU) ile
+  açıp önce çiziyor, sonra `addCanvas` ile tek seferde yüklüyoruz (refresh/geri okuma yok). Arka planlar da aynı yoldan +
+  en fazla 4 arka plan dokusu önbellekte (LRU).
+- Sonuç (başsız Chromium): 20 tam döngü çökmesiz; doku sayısı 93'te sabit; JS belleği 159 → **61 MB**; oyun yeniden
+  başlatmada FPS 8-12 → **~30** (aynı yazılım GPU'su). Oyunu 6 kez art arda yeniden başlatma testi 4/4 temiz.
+- Not: açılışta 4 kez görülen "ReadPixels" uyarısı Phaser'ın tek seferlik özellik testlerinden; döngülerde tekrar etmiyor.
+
+**Ölçekleme doğrulaması** (ekran görüntüsü): 360×640 (16:9), 320×568 (SE), 390×844, 412×915 (20:9), 768×1024 (tablet) ve
+çentik simülasyonu (üst 47 / alt 34 px) — hiçbir öğe kesilmiyor, üst şerit çentiğin altında, alt butonlar ev çubuğunun üstünde.
+
+**Kararlar**
+- **Tekrar oynama yıldız vermez**: seviye seçiminden geçilmiş bir seviye tekrar oynanabilir; yıldız verilseydi aynı seviyeyi
+  tekrarlayarak yıldız biriktirilebilirdi. Yalnızca en iyi derecelendirme güncellenir, panelde "+0" yerine kısa bir not.
+- Dil seçimi oyun içi ayarlarda gizli (dil değişimi ekranı yeniden kurar → seviye durumu kaybolurdu).
+- Masaüstü yatay pencerede FPS ölçümleri başsız yazılım GPU'sunda alındı — gerçek cihaz değerleri değildir.

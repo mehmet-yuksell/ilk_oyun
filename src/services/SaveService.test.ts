@@ -11,6 +11,8 @@ const preferencesMock = {
 vi.mock('@capacitor/preferences', () => ({ Preferences: preferencesMock }));
 
 const {
+  collectedRatingStars,
+  recordLevelStars,
   createDefaultSaveData,
   InMemoryKeyValueStorage,
   LocalStorageSaveService,
@@ -189,5 +191,27 @@ describe('restoreFromPreferencesIfMissing', () => {
 
     await expect(restoreFromPreferencesIfMissing(storage)).resolves.toBeUndefined();
     expect(storage.getItem(STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('levelStars (Faz 5)', () => {
+  it('varsayılan kayıtta boş, eski kayıtta (alan yok) boş nesneyle gelir', () => {
+    expect(createDefaultSaveData().levelStars).toEqual({});
+    expect(migrateSaveData({ stars: 5 }).levelStars).toEqual({});
+  });
+
+  it('bozuk tip (dizi/sayı) boş nesneye onarılır', () => {
+    expect(migrateSaveData({ levelStars: [1, 2] }).levelStars).toEqual({});
+    expect(migrateSaveData({ levelStars: 7 }).levelStars).toEqual({});
+  });
+
+  it('recordLevelStars yalnızca daha iyi skoru yazar ve 1..3 aralığına sıkıştırır', () => {
+    let d = createDefaultSaveData();
+    d = recordLevelStars(d, 4, 2);
+    expect(d.levelStars['4']).toBe(2);
+    expect(recordLevelStars(d, 4, 1)).toBe(d);
+    d = recordLevelStars(d, 4, 9);
+    expect(d.levelStars['4']).toBe(3);
+    expect(collectedRatingStars(recordLevelStars(d, 5, 1))).toBe(4);
   });
 });

@@ -1,6 +1,8 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { COLORS, HIGHLIGHT, SHADOW, hexToNum } from './theme';
 import { strokeArc } from './itemVisuals';
+import type { GraphicsLike } from './canvasGraphics';
+import { bakeCentered } from './bake';
 
 /**
  * Oda eşyaları (mobilya) için 15 jenerik siluet -- 5 odanın 10'ar eşyası, etiket anahtar
@@ -83,20 +85,20 @@ export const ICON_DEPTH: Record<RoomIconKey, number> = {
   armchair: 4,
 };
 
-type Drawer = (g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, accentOn: boolean) => void;
+type Drawer = (g: GraphicsLike, w: number, h: number, body: number, accentOn: boolean) => void;
 
-function softShadow(g: Phaser.GameObjects.Graphics, w: number, h: number): void {
+function softShadow(g: GraphicsLike, w: number, h: number): void {
   g.fillStyle(SHADOW.color, SHADOW.alpha * 0.8);
   g.fillEllipse(0, h * 0.46, w * 0.7, h * 0.16);
 }
 
-function gloss(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, on: boolean): void {
+function gloss(g: GraphicsLike, x: number, y: number, w: number, h: number, on: boolean): void {
   if (!on) return;
   g.fillStyle(HIGHLIGHT.color, HIGHLIGHT.alpha * 0.8);
   g.fillEllipse(x, y, w, h);
 }
 
-function bodyFill(g: Phaser.GameObjects.Graphics, body: number, accentOn: boolean): void {
+function bodyFill(g: GraphicsLike, body: number, accentOn: boolean): void {
   if (accentOn) {
     g.fillGradientStyle(shadeNum(body, 0.28), shadeNum(body, 0.28), shadeNum(body, -0.16), shadeNum(body, -0.16), 1, 1, 1, 1);
   } else {
@@ -113,7 +115,7 @@ function shadeNum(color: number, percent: number): number {
   return (clamp(adjust(r)) << 16) | (clamp(adjust(gC)) << 8) | clamp(adjust(b));
 }
 
-function drawArmchair(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawArmchair(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.4, -h * 0.12, w * 0.8, h * 0.5, 10);
@@ -123,14 +125,14 @@ function drawArmchair(g: Phaser.GameObjects.Graphics, w: number, h: number, body
   gloss(g, -w * 0.12, -h * 0.3, w * 0.3, h * 0.16, on);
 }
 
-function drawRug(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawRug(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.46, -h * 0.26, w * 0.92, h * 0.52, 10);
   g.lineStyle(2, on ? 0xffffff : hexToNum(COLORS.inkSoft), on ? 0.5 : 0.25);
   g.strokeRoundedRect(-w * 0.36, -h * 0.17, w * 0.72, h * 0.34, 7);
 }
 
-function drawCurtain(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawCurtain(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   g.fillStyle(on ? hexToNum(COLORS.inkSoft) : hexToNum(COLORS.surfaceMuted), 0.8);
   g.fillRect(-w * 0.44, -h * 0.5, w * 0.88, 4);
   bodyFill(g, body, on);
@@ -142,14 +144,14 @@ function drawCurtain(g: Phaser.GameObjects.Graphics, w: number, h: number, body:
   }
 }
 
-function drawWallAccent(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawWallAccent(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.4, -h * 0.4, w * 0.8, h * 0.8, 10);
   gloss(g, -w * 0.1, -h * 0.15, w * 0.3, h * 0.25, on);
 }
 
-function drawTable(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawTable(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.44, -h * 0.4, w * 0.88, h * 0.22, 6);
@@ -159,7 +161,7 @@ function drawTable(g: Phaser.GameObjects.Graphics, w: number, h: number, body: n
   gloss(g, -w * 0.1, -h * 0.34, w * 0.3, h * 0.08, on);
 }
 
-function drawLamp(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawLamp(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   const shadeW = w * 0.7;
@@ -179,7 +181,7 @@ function drawLamp(g: Phaser.GameObjects.Graphics, w: number, h: number, body: nu
   gloss(g, 0, -h * 0.32, shadeW * 0.3, shadeH * 0.4, on);
 }
 
-function drawFrame(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawFrame(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.38, -h * 0.44, w * 0.76, h * 0.82, 5);
@@ -193,7 +195,7 @@ function drawFrame(g: Phaser.GameObjects.Graphics, w: number, h: number, body: n
   g.fillTriangle(-iw * 0.26, ih * 0.3 - h * 0.02, 0, -ih * 0.1 - h * 0.02, iw * 0.26, ih * 0.3 - h * 0.02);
 }
 
-function drawCabinet(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawCabinet(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.4, -h * 0.48, w * 0.8, h * 0.96, 8);
@@ -206,7 +208,7 @@ function drawCabinet(g: Phaser.GameObjects.Graphics, w: number, h: number, body:
   gloss(g, -w * 0.12, -h * 0.36, w * 0.24, h * 0.12, on);
 }
 
-function drawPlant(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawPlant(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   const potW = w * 0.5;
   const potH = h * 0.32;
@@ -229,7 +231,7 @@ function drawPlant(g: Phaser.GameObjects.Graphics, w: number, h: number, body: n
   g.fillTriangle(0, potY - h * 0.4, -w * 0.08, potY + 2, w * 0.08, potY + 2);
 }
 
-function drawTvStand(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawTvStand(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   g.fillStyle(on ? hexToNum(COLORS.inkSoft) : hexToNum(COLORS.surfaceMuted), 1);
   g.fillRoundedRect(-w * 0.44, h * 0.14, w * 0.88, h * 0.18, 5);
@@ -240,7 +242,7 @@ function drawTvStand(g: Phaser.GameObjects.Graphics, w: number, h: number, body:
   gloss(g, -w * 0.08, -h * 0.22, w * 0.22, h * 0.1, on);
 }
 
-function drawChair(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawChair(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.32, -h * 0.05, w * 0.64, h * 0.18, 5);
@@ -252,7 +254,7 @@ function drawChair(g: Phaser.GameObjects.Graphics, w: number, h: number, body: n
   }
 }
 
-function drawBed(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawBed(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   g.fillStyle(on ? hexToNum(COLORS.inkSoft) : hexToNum(COLORS.surfaceMuted), 1);
   g.fillRoundedRect(-w * 0.44, -h * 0.46, w * 0.1, h * 0.5, 4);
@@ -263,7 +265,7 @@ function drawBed(g: Phaser.GameObjects.Graphics, w: number, h: number, body: num
   gloss(g, w * 0.05, -h * 0.02, w * 0.3, h * 0.12, on);
 }
 
-function drawFridge(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawFridge(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.34, -h * 0.48, w * 0.68, h * 0.96, 8);
@@ -275,7 +277,7 @@ function drawFridge(g: Phaser.GameObjects.Graphics, w: number, h: number, body: 
   gloss(g, -w * 0.08, -h * 0.3, w * 0.18, h * 0.14, on);
 }
 
-function drawFaucet(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawFaucet(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   g.fillStyle(on ? hexToNum(COLORS.inkSoft) : hexToNum(COLORS.surfaceMuted), 1);
   g.fillRoundedRect(-w * 0.3, h * 0.14, w * 0.6, h * 0.12, 4);
@@ -285,7 +287,7 @@ function drawFaucet(g: Phaser.GameObjects.Graphics, w: number, h: number, body: 
   gloss(g, -w * 0.02, -h * 0.02, w * 0.12, h * 0.14, on);
 }
 
-function drawToybox(g: Phaser.GameObjects.Graphics, w: number, h: number, body: number, on: boolean): void {
+function drawToybox(g: GraphicsLike, w: number, h: number, body: number, on: boolean): void {
   softShadow(g, w, h);
   bodyFill(g, body, on);
   g.fillRoundedRect(-w * 0.4, -h * 0.1, w * 0.8, h * 0.5, 8);
@@ -315,11 +317,12 @@ const DRAWERS: Record<RoomIconKey, Drawer> = {
   toybox: drawToybox,
 };
 
-/**
- * vivid=false: KOYU, net bir siluet (yenilenmemiş -- bkz. Faz 5 kararları: eski soluk/açık gri
- * dolgu "eşya daha yenilenmemiş mi, yoksa zaten mi öyle" belirsizliği yaratıyordu, koyu siluet
- * çok daha net bir "henüz kilitli/yenilenmemiş" sinyali verir). vivid=true: accentColor ile
- * canlı degrade+parlama "yenilendi" hâli. */
+/** Yenilenmemiş eşyanın "boyanmamış" tonu: sıcak bej kil/ahşap (eski koyu mor siluet ağır ve
+ * yer tutucu gibi duruyordu -- bkz. DEVLOG Faz 5). Yenilemek = eşyayı rengine boyamak. */
+const UNPAINTED = 0xc2a28c;
+
+/** Pişmiş oda eşyası: vivid=false "boyanmamış" bej, vivid=true accentColor ile canlı degrade+parlama.
+ * İkisine de aynı yumuşak ışık geçişi (üst aydınlık, alt gölge) uygulanır. Dönen Image orijini merkez. */
 export function drawRoomIcon(
   scene: Phaser.Scene,
   key: RoomIconKey,
@@ -327,9 +330,19 @@ export function drawRoomIcon(
   h: number,
   accentColor: number,
   vivid: boolean,
-): Phaser.GameObjects.Graphics {
-  const g = scene.add.graphics();
-  const body = vivid ? accentColor : hexToNum(COLORS.ink);
-  DRAWERS[key](g, w, h, body, vivid);
-  return g;
+): Phaser.GameObjects.Image {
+  const body = vivid ? accentColor : UNPAINTED;
+  const size = { width: w * 1.25, height: h * 1.25 };
+  const tex = bakeCentered(scene, `room-${key}-${Math.round(w)}x${Math.round(h)}-${body.toString(16)}-${vivid ? 1 : 0}`, size, (g, ctx) => {
+    DRAWERS[key](g, w, h, body, vivid);
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-atop';
+    const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    grad.addColorStop(0, vivid ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.28)');
+    grad.addColorStop(1, 'rgba(90,58,44,0.16)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(-w, -h, w * 2, h * 2);
+    ctx.restore();
+  });
+  return scene.add.image(0, 0, tex).setDisplaySize(size.width, size.height);
 }

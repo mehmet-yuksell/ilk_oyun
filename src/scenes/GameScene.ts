@@ -22,18 +22,20 @@ import { COLORS, EASE, FONT_FAMILY, TYPE_SCALE, hexToNum, textStyle } from './th
 import { BASE_HEIGHT, BASE_WIDTH, setupView, toWorld, type View } from './viewport';
 import { drawCozyBackground } from './background';
 import { readSafeAreaInsets } from './safeArea';
-import { fadeToScene } from './sceneTransition';
+import { enterScene, fadeToScene } from './sceneTransition';
 import { getDebugLevelParam } from './debugLevelParam';
 import { ConfettiEmitter, prefersReducedMotion } from './confetti';
 import { type HapticService, createHapticService } from '../services/HapticService';
 import { type SoundService, WebAudioSoundService } from '../services/SoundService';
 import { audioEngine } from '../services/AudioEngine';
-import { LocalStorageSaveService, type SaveData, type SaveService } from '../services/SaveService';
+import { LocalStorageSaveService, recordLevelStars, type SaveData, type SaveService } from '../services/SaveService';
 import { type AnalyticsService, ConsoleAnalyticsService } from '../services/AnalyticsService';
 import { t } from '../i18n/translations';
 import type { Language, TranslationKey } from '../i18n/translations';
 import type { ActiveObstacles, Button, FeedbackKind, Layout, SessionMode } from './gameTypes';
-import { BUTTON_HEIGHT, BUTTON_WIDTH, createBackButton, createButton } from './gameHud';
+import { createButton, createIconButton } from './ui';
+import { iconBack, iconGear, iconPlus, iconUndo } from './icons';
+import { openSettingsPanel, type SettingsPanelHandle } from './settingsPanel';
 import { GameJuiceFx } from './gameAnimations';
 import { ParticleFx, bakeStar } from './fx';
 import { GameInputController } from './gameInput';
@@ -73,7 +75,7 @@ const BASE_SLOT_HEIGHT = 54;
 const COLS = 3;
 const COL_GAP = 16;
 const ROW_GAP = 22;
-const TOP_MARGIN = 170;
+const BOTTOM_BUTTON_H = 58;
 const BASE_ITEM_INSET_X = 12;
 const BASE_ITEM_INSET_Y = 5;
 const MIN_GRID_SCALE = 0.52;
@@ -126,7 +128,11 @@ export class GameScene extends Phaser.Scene {
 
   private framesLayer!: Phaser.GameObjects.Container;
   private itemsLayer!: Phaser.GameObjects.Container;
-  private statusSubText!: Phaser.GameObjects.Text;
+  private moveChip!: HudChip;
+  private itemsChip!: HudChip;
+  private toastText!: Phaser.GameObjects.Text;
+  private gridTop = 170;
+  private settingsPanel: SettingsPanelHandle | null = null;
   private stuckBanner!: Phaser.GameObjects.Container;
   private undoButton!: Button;
   private extraContainerButton!: Button;
@@ -198,7 +204,7 @@ export class GameScene extends Phaser.Scene {
       isAnimating: () => this.isAnimating,
     });
     this.inputController = new GameInputController({
-      isAnimating: () => this.isAnimating,
+      isAnimating: () => this.isAnimating || this.settingsPanel !== null,
       findContainerAt: (x, y) => this.findContainerAt(x, y),
       getTopRunLengthFor: (id) => {
         const container = this.gameState.containers.find((c) => c.id === id);
@@ -222,56 +228,39 @@ export class GameScene extends Phaser.Scene {
 
     this.analytics.track({ name: 'level_start', levelNumber: this.levelNumber ?? 0, mode: loaded.mode });
 
-    this.cameras.main.fadeIn(220);
+    enterScene(this);
+    this.settingsPanel = null;
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off('hardware-back'));
+    this.events.on('hardware-back', () => this.onHardwareBack());
     this.drawBackground();
 
-    const headerY = this.safeTop + 26;
+    const headerY = this.safeTop + 30;
+    const blocked = () => this.isAnimating || this.settingsPanel !== null;
 
     if (this.sessionMode === 'progress' || this.sessionMode === 'daily') {
-      createBackButton(this, insets.left + 30, headerY, () => {
-        if (!this.isAnimating) fadeToScene(this, 'RoomScene');
-      });
+      createIconButton(this, insets.left + 30, headerY, iconBack, () => fadeToScene(this, 'RoomScene'), { isBlocked: blocked, onPress: () => this.feedback('button') });
     }
+    createIconButton(this, this.vp.width - insets.right - 30, headerY, iconGear, () => this.openSettings(), { isBlocked: blocked, onPress: () => this.feedback('button') });
 
-    const labelText = this.add
-      .text(0, headerY, loaded.label, {
-        fontFamily: FONT_FAMILY,
-        fontSize: `${TYPE_SCALE.sectionTitle}px`,
-        fontStyle: '800',
-        color: COLORS.ink,
-        stroke: '#ffffff',
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(1);
-
-    const maxPillW = this.vp.width - 2 * (insets.left + 56);
-    if (labelText.width + 72 > maxPillW) {
-      labelText.setFontSize(13); // debug modunda çok uzun etiketler (ör. "#450, kilitli kap") için
-    }
-    const pillW = Math.min(maxPillW, Math.max(180, labelText.width + 72));
+    // Seviye hapı (ortada) -- HUD yıldızı hapın sağ ucunda (uçan yıldızların hedefi).
+    const labelText = this.add.text(0, headerY - 1, loaded.label, textStyle('sectionTitle')).setOrigin(0.5).setDepth(1);
+    const maxPillW = this.vp.width - 2 * (Math.max(insets.left, insets.right) + 64);
+    if (labelText.width + 72 > maxPillW) labelText.setFontSize(13); // debug modunda uzun etiketler
+    const pillW = Math.min(maxPillW, Math.max(170, labelText.width + 72));
     labelText.setX(this.vp.width / 2 - 14);
-
     const pill = this.add.graphics();
-    pill.fillStyle(hexToNum(COLORS.surface), 0.88);
-    pill.fillRoundedRect(this.vp.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
-    pill.lineStyle(2, hexToNum(COLORS.coral), 0.55);
-    pill.strokeRoundedRect(this.vp.width / 2 - pillW / 2, headerY - 20, pillW, 40, 20);
-    pill.setDepth(0);
-
+    pill.fillStyle(0xffffff, 0.92);
+    pill.fillRoundedRect(this.vp.width / 2 - pillW / 2, headerY - 22, pillW, 44, 22);
+    pill.lineStyle(1.5, hexToNum(COLORS.woodLight), 0.9);
+    pill.strokeRoundedRect(this.vp.width / 2 - pillW / 2, headerY - 22, pillW, 44, 22);
     this.starAnchor = { x: this.vp.width / 2 + pillW / 2 - 24, y: headerY };
     this.hudStar = this.add.image(this.starAnchor.x, this.starAnchor.y, bakeStar(this, 20, true)).setDisplaySize(26, 26).setDepth(1);
 
-    this.statusSubText = this.add
-      .text(this.vp.width / 2, headerY + 32, '', {
-        fontFamily: FONT_FAMILY,
-        fontSize: `${TYPE_SCALE.hudCounter}px`,
-        fontStyle: '800',
-        color: COLORS.inkSoft,
-        stroke: '#ffffff',
-        strokeThickness: 2,
-      })
-      .setOrigin(0.5);
+    // Sayaç çipleri: hamle (kalan hakkı gösteren ince çubukla) + kalan eşya.
+    const chipY = headerY + 56;
+    this.moveChip = new HudChip(this, this.vp.width / 2 - 82, chipY, 150, t('moveLabel', this.lang), this.moveLimit > 0);
+    this.itemsChip = new HudChip(this, this.vp.width / 2 + 82, chipY, 150, t('remainingItemsLabel', this.lang), false);
+    this.gridTop = chipY + 44;
 
     // "Takıldın" bandı: sert kırmızı zemin yerine sakin koyu erik bir hap (suçlamayan ton).
     const stuckLabel = this.add.text(0, 0, t('stuckBanner', this.lang), textStyle('caption', { color: COLORS.cream })).setOrigin(0.5);
@@ -279,30 +268,38 @@ export class GameScene extends Phaser.Scene {
     const stuckBg = this.add.graphics();
     stuckBg.fillStyle(hexToNum(COLORS.overlay), 0.88);
     stuckBg.fillRoundedRect(-stuckW / 2, -17, stuckW, 34, 17);
-    this.stuckBanner = this.add.container(this.vp.width / 2, headerY + 62, [stuckBg, stuckLabel]).setAlpha(0).setDepth(5);
+    this.stuckBanner = this.add.container(this.vp.width / 2, chipY + 46, [stuckBg, stuckLabel]).setAlpha(0).setDepth(5);
+    this.toastText = this.add.text(this.vp.width / 2, chipY + 46, '', textStyle('body', { color: COLORS.inkSoft })).setOrigin(0.5).setDepth(5);
 
     this.framesLayer = this.add.container(0, 0);
     this.itemsLayer = this.add.container(0, 0);
 
-    const buttonY = this.vp.height - this.safeBottom - BUTTON_HEIGHT / 2 - 6;
-    this.undoButton = createButton(
-      this,
-      this.vp.width / 2 - (BUTTON_WIDTH + 20) / 2,
-      buttonY,
-      t('undoButton', this.lang),
-      'undo',
-      () => this.onUndo(),
-      () => this.isAnimating,
-    );
-    this.extraContainerButton = createButton(
-      this,
-      this.vp.width / 2 + (BUTTON_WIDTH + 20) / 2,
-      buttonY,
-      this.extraContainerLabel(),
-      'plus',
-      () => this.onAddExtraContainer(),
-      () => this.isAnimating,
-    );
+    const buttonY = this.vp.height - this.safeBottom - BOTTOM_BUTTON_H / 2 - 8;
+    const btnW = Math.min(200, (this.vp.width - 60) / 2);
+    this.undoButton = createButton(this, {
+      x: this.vp.width / 2 - btnW / 2 - 8,
+      y: buttonY,
+      width: btnW,
+      height: BOTTOM_BUTTON_H,
+      label: t('undoButton', this.lang),
+      variant: 'secondary',
+      icon: iconUndo,
+      isBlocked: blocked,
+      onPress: () => this.feedback('button'),
+      onTap: () => this.onUndo(),
+    });
+    this.extraContainerButton = createButton(this, {
+      x: this.vp.width / 2 + btnW / 2 + 8,
+      y: buttonY,
+      width: btnW,
+      height: BOTTOM_BUTTON_H,
+      label: this.extraContainerLabel(),
+      variant: 'sage',
+      icon: iconPlus,
+      isBlocked: blocked,
+      onPress: () => this.feedback('button'),
+      onTap: () => this.onAddExtraContainer(),
+    });
     this.extraContainerButton.setEnabled(this.extraContainerUsesLeft > 0);
 
     this.undoButton.setEnabled(false);
@@ -431,8 +428,8 @@ export class GameScene extends Phaser.Scene {
     // COLS kap) her zaman ekran genişliğine (kenar boşluklarıyla) sığmalı, aksi halde kaplar
     // ekranın yanlarından taşar.
     const rows = Math.max(1, Math.ceil(ids.length / COLS));
-    const buttonTop = this.vp.height - this.safeBottom - BUTTON_HEIGHT - 26;
-    const availableHeight = Math.max(100, buttonTop - TOP_MARGIN);
+    const buttonTop = this.vp.height - this.safeBottom - BOTTOM_BUTTON_H - 30;
+    const availableHeight = Math.max(100, buttonTop - this.gridTop);
     const neededAtBase = rows * 4 * BASE_SLOT_HEIGHT + (rows - 1) * ROW_GAP;
     const heightScale = availableHeight / neededAtBase;
 
@@ -455,7 +452,7 @@ export class GameScene extends Phaser.Scene {
     const verticalSlack = Math.max(0, availableHeight - totalGridHeight);
     // Az sayıda satır olan (erken) seviyelerde dikey boşluk ızgarayı ORTALAMAK için kullanılır --
     // aksi halde kaplar üstte kalıp altta "boş" hissi veren büyük bir alan bırakırdı (bkz. "boşluk < %25").
-    const topOffset = TOP_MARGIN + verticalSlack * 0.48;
+    const topOffset = this.gridTop + verticalSlack * 0.48;
 
     ids.forEach((id, index) => {
       const container = this.gameState.containers.find((c) => c.id === id)!;
@@ -711,7 +708,7 @@ export class GameScene extends Phaser.Scene {
   private onLevelWon(): void {
     if (this.sessionMode !== 'progress' && this.sessionMode !== 'daily') {
       // debug/demo modunda kayıt yapılmaz, reklam/otomatik yönlendirme olmaz -- sadece bilgi metni.
-      this.statusSubText.setText(t('levelCompleteNoStars', this.lang));
+      this.toastText.setText(t('levelCompleteNoStars', this.lang));
       return;
     }
 
@@ -720,14 +717,22 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(320, () => this.feedback('win'));
 
     const data = this.saveService.load();
-    const awarded = this.sessionMode === 'progress' ? PROGRESS_LEVEL_STARS : DAILY_PUZZLE_STARS;
+    // Yıldız (performans) derecelendirmesi: undo kullanımı hamle sayısına eklenir (bkz. onUndo).
+    const effectiveMoves = this.moveCount + this.undoCount;
+    const rating = this.par <= 0 ? 3 : effectiveMoves <= this.par ? 3 : effectiveMoves <= this.par * 1.3 ? 2 : 1;
+    // Seviye seçiminden TEKRAR oynanan (zaten geçilmiş) bir seviye yıldız vermez -- aynı seviyeyi
+    // tekrarlayarak yıldız biriktirmeyi önler; yalnızca en iyi derecelendirme güncellenir (Faz 5).
+    const isReplay = this.sessionMode === 'progress' && this.levelNumber !== null && this.levelNumber < data.currentLevel;
+    const awarded = isReplay ? 0 : this.sessionMode === 'progress' ? PROGRESS_LEVEL_STARS : DAILY_PUZZLE_STARS;
 
     let saved: SaveData = { ...data, stars: data.stars + awarded };
     if (this.sessionMode === 'progress') {
       const nextLevel = (this.levelNumber ?? data.currentLevel) + 1;
       saved = { ...saved, currentLevel: Math.max(data.currentLevel, nextLevel) };
+      if (this.levelNumber !== null) saved = recordLevelStars(saved, this.levelNumber, rating);
     }
     this.saveService.save(saved);
+    this.saveData = saved;
 
     this.analytics.track({
       name: 'level_win',
@@ -736,10 +741,6 @@ export class GameScene extends Phaser.Scene {
       moveCount: this.moveCount,
       undoCount: this.undoCount,
     });
-
-    // Yıldız (performans) derecelendirmesi: undo kullanımı hamle sayısına eklenir (bkz. onUndo).
-    const effectiveMoves = this.moveCount + this.undoCount;
-    const rating = this.par <= 0 ? 3 : effectiveMoves <= this.par ? 3 : effectiveMoves <= this.par * 1.3 ? 2 : 1;
 
     const durationMs = Date.now() - this.levelStartTime;
     this.time.delayedCall(prefersReducedMotion() ? 200 : 700, () =>
@@ -782,9 +783,9 @@ export class GameScene extends Phaser.Scene {
 
   private restartSameLevel(): void {
     if (this.sessionMode === 'progress' && this.levelNumber !== null) {
-      this.scene.start('GameScene', { mode: 'progress', levelNumber: this.levelNumber });
+      fadeToScene(this, 'GameScene', { mode: 'progress', levelNumber: this.levelNumber });
     } else if (this.sessionMode === 'daily') {
-      this.scene.start('GameScene', { mode: 'daily' });
+      fadeToScene(this, 'GameScene', { mode: 'daily' });
     } else {
       this.scene.restart();
     }
@@ -799,6 +800,33 @@ export class GameScene extends Phaser.Scene {
   private hideStuckBanner(): void {
     if (this.stuckBanner.alpha === 0) return;
     this.tweens.add({ targets: this.stuckBanner, alpha: 0, duration: 200, ease: EASE.out });
+  }
+
+  private openSettings(): void {
+    if (this.settingsPanel) return;
+    this.inputController.reset();
+    this.selectedId = null;
+    this.drawFrames();
+    this.render();
+    this.settingsPanel = openSettingsPanel(this, {
+      showLanguage: false,
+      onPress: () => this.feedback('button'),
+      onChange: (data) => {
+        this.saveData = data;
+      },
+      onClose: () => {
+        this.settingsPanel = null;
+      },
+    });
+  }
+
+  private onHardwareBack(): void {
+    if (this.settingsPanel) {
+      this.settingsPanel.close();
+      return;
+    }
+    if (this.gameOver) return;
+    fadeToScene(this, 'RoomScene');
   }
 
   /** Uçan yıldız HUD'daki yıldıza varınca küçük bir "pop". */
@@ -867,13 +895,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     const effectiveMoves = this.moveCount + this.undoCount;
-    const moveText =
-      this.moveLimit > 0
-        ? `${t('moveLabel', this.lang)}: ${effectiveMoves}/${this.moveLimit}`
-        : `${t('moveLabel', this.lang)}: ${this.moveCount}`;
-    this.statusSubText.setText(`${moveText}   ${t('remainingItemsLabel', this.lang)}: ${total}`);
+    if (this.moveLimit > 0) {
+      this.moveChip.setValue(`${effectiveMoves}/${this.moveLimit}`, 1 - effectiveMoves / this.moveLimit);
+    } else {
+      this.moveChip.setValue(`${this.moveCount}`);
+    }
+    this.itemsChip.setValue(`${total}`);
     const movesLeft = this.moveLimit > 0 ? this.moveLimit - effectiveMoves : Infinity;
-    this.statusSubText.setColor(movesLeft <= 3 ? COLORS.gentleNo : COLORS.inkSoft);
+    this.moveChip.setWarn(movesLeft <= 3);
   }
 
   private itemSize(): { w: number; h: number } {
@@ -934,5 +963,63 @@ export class GameScene extends Phaser.Scene {
     const { container } = createItemVisual(this, type, w, h);
     container.setPosition(x, y);
     return container;
+  }
+}
+
+/** HUD sayaç çipi: küçük başlık + değer, isteğe bağlı kalan-hak çubuğu; uyarı durumunda gül kurusu + nabız. */
+class HudChip {
+  private readonly scene: Phaser.Scene;
+  private readonly root: Phaser.GameObjects.Container;
+  private readonly bg: Phaser.GameObjects.Graphics;
+  private readonly value: Phaser.GameObjects.Text;
+  private readonly meter: Phaser.GameObjects.Graphics | null;
+  private readonly w: number;
+  private warn = false;
+  private pulse: Phaser.Tweens.Tween | null = null;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, w: number, label: string, withMeter: boolean) {
+    this.scene = scene;
+    this.w = w;
+    this.root = scene.add.container(x, y).setDepth(2);
+    this.bg = scene.add.graphics();
+    const caption = scene.add.text(-w / 2 + 16, 0, label, textStyle('caption', { color: COLORS.inkSoft })).setOrigin(0, 0.5);
+    this.value = scene.add.text(w / 2 - 16, -1, '', textStyle('hud')).setOrigin(1, 0.5);
+    this.meter = withMeter ? scene.add.graphics() : null;
+    this.root.add([this.bg, caption, this.value]);
+    if (this.meter) this.root.add(this.meter);
+    this.drawBg();
+  }
+
+  private drawBg(): void {
+    const { w } = this;
+    this.bg.clear();
+    this.bg.fillStyle(hexToNum(this.warn ? '#FBE1E4' : '#FFFFFF'), 0.9);
+    this.bg.fillRoundedRect(-w / 2, -19, w, 38, 19);
+    this.bg.lineStyle(1.5, hexToNum(this.warn ? COLORS.gentleNo : COLORS.woodLight), 0.85);
+    this.bg.strokeRoundedRect(-w / 2, -19, w, 38, 19);
+  }
+
+  setValue(text: string, fraction?: number): void {
+    this.value.setText(text);
+    if (this.meter && fraction !== undefined) {
+      const f = Phaser.Math.Clamp(fraction, 0, 1);
+      const mw = this.w - 40;
+      this.meter.clear();
+      this.meter.fillStyle(hexToNum(COLORS.surfaceMuted), 1);
+      this.meter.fillRoundedRect(-mw / 2, 11, mw, 4, 2);
+      this.meter.fillStyle(hexToNum(this.warn ? COLORS.gentleNo : '#7FB28A'), 1);
+      if (f > 0) this.meter.fillRoundedRect(-mw / 2, 11, Math.max(4, mw * f), 4, 2);
+    }
+  }
+
+  setWarn(warn: boolean): void {
+    if (this.warn === warn) return;
+    this.warn = warn;
+    this.value.setColor(warn ? COLORS.gentleNo : COLORS.ink);
+    this.drawBg();
+    this.pulse?.stop();
+    this.pulse = null;
+    this.root.setScale(1);
+    if (warn) this.pulse = this.scene.tweens.add({ targets: this.root, scale: 1.06, duration: 520, yoyo: true, repeat: -1, ease: EASE.inOut });
   }
 }

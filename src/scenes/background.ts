@@ -4,6 +4,7 @@ import { EASE, PALETTE, type RoomTheme } from './theme';
 import type { View } from './viewport';
 import { syncBodyBackground } from './bodyBackground';
 import { prefersReducedMotion } from './confetti';
+import { createBakedCanvasTexture } from './bake';
 
 /**
  * "Cozy oda" arka planı: duvar degradesi + pencere ışığı (yumuşak radyal parlama) + çapraz güneş
@@ -120,16 +121,29 @@ function paintBackground(ctx: CanvasRenderingContext2D, w: number, h: number, th
 function ensureMoteTexture(scene: Phaser.Scene): void {
   if (scene.textures.exists(MOTE_KEY)) return;
   const size = 48;
-  const tex = scene.textures.createCanvas(MOTE_KEY, size, size);
-  if (!tex) return;
-  const ctx = tex.getContext();
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.35, 'rgba(255,255,255,0.55)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
-  tex.refresh();
+  createBakedCanvasTexture(scene, MOTE_KEY, size, size, (ctx) => {
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  });
+}
+
+/** Arka plan dokuları büyük (~2.5 MB) -- en fazla bu kadarı önbellekte tutulur, en eskisi atılır. */
+const MAX_BACKGROUNDS = 4;
+const backgroundKeys: string[] = [];
+
+function rememberBackground(scene: Phaser.Scene, key: string): void {
+  const i = backgroundKeys.indexOf(key);
+  if (i >= 0) backgroundKeys.splice(i, 1);
+  backgroundKeys.push(key);
+  while (backgroundKeys.length > MAX_BACKGROUNDS) {
+    const old = backgroundKeys.shift()!;
+    // Yalnızca önceki (kapanmış) sahnelere ait olabilir -- etkin sahne her zaman listenin sonundadır.
+    if (scene.textures.exists(old)) scene.textures.remove(old);
+  }
 }
 
 export function drawCozyBackground(scene: Phaser.Scene, theme: RoomTheme, view: View, options: BackgroundOptions = {}): Phaser.GameObjects.Image {
@@ -138,13 +152,8 @@ export function drawCozyBackground(scene: Phaser.Scene, theme: RoomTheme, view: 
   const tw = Math.ceil(w);
   const th = Math.ceil(h);
   const key = `bg-${theme.id}-${tw}x${th}-${floorKey}`;
-  if (!scene.textures.exists(key)) {
-    const tex = scene.textures.createCanvas(key, tw, th);
-    if (tex) {
-      paintBackground(tex.getContext(), tw, th, theme, options.floorAt);
-      tex.refresh();
-    }
-  }
+  createBakedCanvasTexture(scene, key, tw, th, (ctx) => paintBackground(ctx, tw, th, theme, options.floorAt));
+  rememberBackground(scene, key);
   syncBodyBackground(theme.bgTop, theme.bgBottom);
   const depth = options.depth ?? -100;
   // 2px taşma payı: kamera ortalaması kesirli olduğunda kenarda alt-piksel boşluk kalmasın.

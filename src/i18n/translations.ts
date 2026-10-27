@@ -27,6 +27,7 @@ export const translations = {
   statsMoves: { tr: 'Hamle', en: 'Moves' },
   statsTime: { tr: 'Süre', en: 'Time' },
   starsEarnedCaption: { tr: 'kazanılan yıldız', en: 'stars earned' },
+  replayNote: { tr: 'Tekrar oynandı — en iyi skorun kaydedildi', en: 'Replayed — your best score is saved' },
   levelLostTitle: { tr: 'Hamle Hakkın Bitti', en: 'Out of Moves' },
   levelLostBody: {
     tr: '{limit} hamle içinde tamamlanamadı ama sorun değil — tekrar deneyebilirsin.',
@@ -74,6 +75,28 @@ export const translations = {
   onLabel: { tr: 'Açık', en: 'On' },
   offLabel: { tr: 'Kapalı', en: 'Off' },
   closeButton: { tr: 'Kapat', en: 'Close' },
+  levelsButton: { tr: 'Seviyeler', en: 'Levels' },
+  levelSelectTitle: { tr: 'Seviyeler', en: 'Levels' },
+  chapter0: { tr: 'Şeftali Sabahı', en: 'Peach Morning' },
+  chapter1: { tr: 'Adaçayı Bahçesi', en: 'Sage Garden' },
+  chapter2: { tr: 'Lavanta Akşamı', en: 'Lavender Dusk' },
+  chapter3: { tr: 'Bal Rengi İkindi', en: 'Honey Afternoon' },
+  chapter4: { tr: 'Puslu Mavi', en: 'Misty Blue' },
+  chapterRange: { tr: 'Seviye {from}–{to}', en: 'Levels {from}–{to}' },
+  room_oturma_odasi: { tr: 'Oturma Odası', en: 'Living Room' },
+  room_mutfak: { tr: 'Mutfak', en: 'Kitchen' },
+  room_yatak_odasi: { tr: 'Yatak Odası', en: 'Bedroom' },
+  room_cocuk_odasi: { tr: 'Çocuk Odası', en: "Kids' Room" },
+  room_calisma_odasi: { tr: 'Çalışma Odası', en: 'Study' },
+  room_banyo: { tr: 'Banyo', en: 'Bathroom' },
+  room_yemek_odasi: { tr: 'Yemek Odası', en: 'Dining Room' },
+  room_balkon: { tr: 'Balkon', en: 'Balcony' },
+  room_antre: { tr: 'Antre', en: 'Entryway' },
+  room_misafir_odasi: { tr: 'Misafir Odası', en: 'Guest Room' },
+  settingsSoundSection: { tr: 'Ses ve titreşim', en: 'Sound & haptics' },
+  settingsGeneralSection: { tr: 'Genel', en: 'General' },
+  versionLabel: { tr: 'Sürüm {v}', en: 'Version {v}' },
+  doneButton: { tr: 'Tamam', en: 'Done' },
 } as const;
 
 export type TranslationKey = keyof typeof translations;
@@ -86,4 +109,29 @@ export function t(key: TranslationKey, lang: Language, params?: Readonly<Record<
     }
   }
   return text;
+}
+
+/** Oda adı (core/roomDefs yalnızca Türkçe ad taşır -- çeviri burada, oda kimliğinden). */
+export function roomName(roomId: string, fallback: string, lang: Language): string {
+  const key = `room_${roomId.replace(/-/g, '_')}` as TranslationKey;
+  return key in translations ? t(key, lang) : fallback;
+}
+
+/** Oda eşyası adlarının İngilizcesi (core/roomDefs yalnızca Türkçe etiket taşır). */
+const ITEM_LABEL_EN: Readonly<Record<string, string>> = {
+  Anahtarlık: 'Key Holder', Askılık: 'Coat Rack', Avize: 'Chandelier', Ayakkabılık: 'Shoe Rack', Aydınlatma: 'Lighting',
+  Ayna: 'Mirror', 'Bahçe Masası': 'Garden Table', 'Bahçe Sandalyesi': 'Garden Chair', Buzdolabı: 'Fridge', Büfe: 'Sideboard',
+  Dolap: 'Cupboard', 'Dosya Dolabı': 'File Cabinet', 'Duvar Fayansı': 'Wall Tiles', 'Duvar Rengi': 'Wall Paint',
+  'Duvar Çıkartması': 'Wall Decal', Duş: 'Shower', Fayans: 'Tiles', Fener: 'Lantern', Gardırop: 'Wardrobe', Güneşlik: 'Sunshade',
+  Halı: 'Rug', Havlu: 'Towels', Karyola: 'Bed Frame', Kitaplık: 'Bookcase', Koltuk: 'Armchair', Komodin: 'Nightstand',
+  Konsol: 'Console Table', 'Korkuluk Süsü': 'Railing Decor', Küvet: 'Bathtub', Lamba: 'Lamp', Lavabo: 'Sink',
+  'Masa Örtüsü': 'Tablecloth', Masa: 'Table', Minder: 'Floor Cushion', Musluk: 'Faucet', Nevresim: 'Bedding',
+  'Oyuncak Dolabı': 'Toy Cabinet', 'Oyuncak Kutusu': 'Toy Box', Pano: 'Pinboard', Paspas: 'Doormat', Perde: 'Curtains',
+  Raf: 'Shelf', 'Resim Çerçevesi': 'Picture Frame', Resim: 'Painting', 'Saksı Bitki': 'Potted Plant', Salıncak: 'Swing Chair',
+  Sandalye: 'Chair', Sehpa: 'Coffee Table', 'TV Ünitesi': 'TV Stand', Tezgah: 'Countertop', Vitrin: 'Display Cabinet',
+  Yatak: 'Bed', 'Yemek Masası': 'Dining Table', 'Çalışma Masası': 'Desk', 'Çimen Halısı': 'Grass Rug', 'Şemsiye Standı': 'Umbrella Stand',
+};
+
+export function itemLabel(label: string, lang: Language): string {
+  return lang === 'en' ? ITEM_LABEL_EN[label] ?? label : label;
 }

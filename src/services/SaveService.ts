@@ -26,6 +26,9 @@ export interface SaveData {
   readonly hapticEnabled: boolean;
   /** Daha önce ipucu balonu gösterilmiş engel türleri ('mystery'|'lock'|'typeLock') -- her biri yalnızca ilk görüldüğünde anlatılır. */
   readonly seenHints: readonly string[];
+  /** Seviye başına EN İYİ yıldız derecelendirmesi (1-3), anahtar = seviye numarası. Faz 5'te eklendi
+   * (seviye seçim ekranı + yıldız toplama). Eski kayıtlarda boş nesneyle başlar. */
+  readonly levelStars: Readonly<Record<string, number>>;
 }
 
 export function createDefaultSaveData(): SaveData {
@@ -41,6 +44,7 @@ export function createDefaultSaveData(): SaveData {
     musicEnabled: true,
     hapticEnabled: true,
     seenHints: [],
+    levelStars: {},
   };
 }
 
@@ -75,8 +79,24 @@ export function migrateSaveData(raw: unknown): SaveData {
   const roomsFromPartial = Array.isArray(partial.rooms) ? (partial.rooms as unknown[]) : [];
   merged.rooms = ROOMS.map((room, i) => (isValidRoomProgress(roomsFromPartial[i]) ? roomsFromPartial[i] : createInitialRoomProgress(room)));
 
+  const ls = merged.levelStars;
+  if (!ls || typeof ls !== 'object' || Array.isArray(ls)) merged.levelStars = {};
+
   merged.version = SAVE_DATA_VERSION;
   return merged as unknown as SaveData;
+}
+
+/** Bir seviyenin derecelendirmesini kaydeder -- yalnızca öncekinden İYİYSE yükseltir (en iyi skor). */
+export function recordLevelStars(data: SaveData, levelNumber: number, rating: number): SaveData {
+  const key = String(levelNumber);
+  const clamped = Math.max(1, Math.min(3, Math.round(rating)));
+  if ((data.levelStars[key] ?? 0) >= clamped) return data;
+  return { ...data, levelStars: { ...data.levelStars, [key]: clamped } };
+}
+
+/** Tüm seviyelerde toplanan derecelendirme yıldızlarının toplamı (en iyi skorlar üzerinden). */
+export function collectedRatingStars(data: SaveData): number {
+  return Object.values(data.levelStars).reduce((sum, n) => sum + n, 0);
 }
 
 export interface SaveService {

@@ -18,12 +18,24 @@ const dpr = Number(opt('dpr', 2));
 const url = opt('url', 'http://localhost:5199');
 const only = opt('only', '');
 const prefix = opt('prefix', '');
+// Çentikli telefon simülasyonu: --notch 47,34 -> safe-area üst/alt (CSS px)
+const notch = opt('notch', '');
 
 fs.mkdirSync(outDir, { recursive: true });
 
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: dpr, hasTouch: true, isMobile: true });
 const page = await context.newPage();
+if (notch) {
+  const [top, bottom] = notch.split(',').map(Number);
+  await page.addInitScript(([t, b]) => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const st = document.createElement('style');
+      st.textContent = ':root{--sat:' + t + 'px !important;--sab:' + b + 'px !important;}';
+      document.head.appendChild(st);
+    });
+  }, [top, bottom]);
+}
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => {
@@ -99,11 +111,11 @@ await waitScene('RoomScene', 700);
 if (want('room')) await shot('02-room');
 
 if (want('settings')) {
-  await startScene('SettingsScene');
-  await waitScene('SettingsScene', 600);
+  await page.evaluate(() => window.__cozy.scene.getScene('RoomScene').openSettings());
+  await wait(700);
   await shot('03-settings');
   await startScene('RoomScene');
-  await waitScene('RoomScene', 400);
+  await waitScene('RoomScene', 600);
 }
 
 if (want('levels')) {
@@ -147,8 +159,14 @@ if (want('game') || want('win')) {
 }
 
 if (want('mid')) {
-  await freshSave({ currentLevel: 34, stars: 180 });
+  const levelStars = {};
+  for (let i = 1; i < 34; i++) levelStars[i] = 1 + ((i * 7) % 3);
+  await freshSave({ currentLevel: 34, stars: 180, levelStars });
   await waitScene('RoomScene', 600);
+  await shot('08a-room-mid');
+  await startScene('LevelSelectScene');
+  await waitScene('LevelSelectScene', 800);
+  await shot('08b-levels-mid');
   await startScene('GameScene', { mode: 'progress', levelNumber: 34 });
   await waitScene('GameScene', 900);
   await shot('08-game-level34');

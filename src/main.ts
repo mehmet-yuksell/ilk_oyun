@@ -4,7 +4,8 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { SplashScene } from './scenes/SplashScene';
 import { RoomScene } from './scenes/RoomScene';
 import { GameScene } from './scenes/GameScene';
-import { SettingsScene } from './scenes/SettingsScene';
+import { LevelSelectScene } from './scenes/LevelSelectScene';
+import { fadeToScene } from './scenes/sceneTransition';
 import { installPhaserDefaults } from './scenes/phaserDefaults';
 import { loadFonts } from './scenes/fonts';
 import { installResizeHandler, physicalSize, renderScale } from './scenes/viewport';
@@ -51,7 +52,7 @@ async function boot(): Promise<void> {
       target: 60,
       min: 20,
     },
-    scene: [SplashScene, RoomScene, GameScene, SettingsScene],
+    scene: [SplashScene, RoomScene, GameScene, LevelSelectScene],
   };
 
   new ConsoleAnalyticsService().track({ name: 'session_start' });
@@ -84,18 +85,16 @@ async function boot(): Promise<void> {
     }
   });
 
-  // Android donanım geri tuşu: tarayıcıda (web) bu olay hiç tetiklenmez, yalnızca
-  // Capacitor'ın native Android kabuğunda çalışır -- orada WebView'in kendi (bu oyunda
-  // kullanılmayan) sayfa geçmişine düşüp uygulamayı aniden kapatmak yerine, odaya dönüşü
-  // mevcut "Odaya Dön"/"Kapat" sahne akışıyla birebir aynı şekilde yönetir.
+  // Android donanım geri tuşu (web'de hiç tetiklenmez): her sahne 'hardware-back' olayını kendisi ele
+  // alır (açık panel varsa önce onu kapatır); ana ekranda uygulamadan çıkılır. Eskiden burada
+  // game.scene.start('RoomScene') aktif sahneyi DURDURMADAN Room'u başlatıyordu (iki sahne üst üste).
   CapacitorApp.addListener('backButton', () => {
     const active = game.scene.getScenes(true)[0];
     if (!active) return;
-    if (active.scene.key === 'RoomScene') {
-      void CapacitorApp.exitApp();
-    } else {
-      game.scene.start('RoomScene');
-    }
+    const exit = () => void CapacitorApp.exitApp();
+    if (active.events.listenerCount('hardware-back') > 0) active.events.emit('hardware-back', exit);
+    else if (active.scene.key === 'RoomScene') exit();
+    else fadeToScene(active, 'RoomScene');
   });
 }
 

@@ -121,24 +121,28 @@ export function showLevelCompletePanel(scene: Phaser.Scene, params: LevelComplet
 
   // Kazanılan yıldız sayacı: 0'dan sayar, bitince küçük bir "pop".
   const counterY = starY + 112;
-  const counterStar = scene.add.image(-34, counterY, bakeStar(scene, 30, true)).setDisplaySize(39, 39);
-  panel.add(counterStar);
-  const counterText = scene.add.text(-12, counterY, '+0', textStyle('panelTitle')).setOrigin(0, 0.5);
-  panel.add(counterText);
-  panel.add(scene.add.text(0, counterY + 28, t('starsEarnedCaption', lang), textStyle('caption', { color: COLORS.inkSoft })).setOrigin(0.5));
-  const counterProxy = { n: 0 };
-  scene.tweens.add({
-    targets: counterProxy,
-    n: awarded,
-    duration: JUICE.levelCompletePanel.counterDurationMs * 1.4,
-    delay: 480 + rating * 300,
-    ease: EASE.out,
-    onUpdate: () => counterText.setText(`+${Math.round(counterProxy.n)}`),
-    onComplete: () => {
-      counterText.setText(`+${awarded}`);
-      scene.tweens.add({ targets: [counterText, counterStar], scale: '*=1.18', duration: 140, yoyo: true, ease: EASE.out });
-    },
-  });
+  if (awarded > 0) {
+    const counterStar = scene.add.image(-34, counterY, bakeStar(scene, 30, true)).setDisplaySize(39, 39);
+    panel.add(counterStar);
+    const counterText = scene.add.text(-12, counterY, '+0', textStyle('panelTitle')).setOrigin(0, 0.5);
+    panel.add(counterText);
+    panel.add(scene.add.text(0, counterY + 28, t('starsEarnedCaption', lang), textStyle('caption', { color: COLORS.inkSoft })).setOrigin(0.5));
+    const counterProxy = { n: 0 };
+    scene.tweens.add({
+      targets: counterProxy,
+      n: awarded,
+      duration: JUICE.levelCompletePanel.counterDurationMs * 1.4,
+      delay: 480 + rating * 300,
+      ease: EASE.out,
+      onUpdate: () => counterText.setText(`+${Math.round(counterProxy.n)}`),
+      onComplete: () => {
+        counterText.setText(`+${awarded}`);
+        scene.tweens.add({ targets: [counterText, counterStar], scale: '*=1.18', duration: 140, yoyo: true, ease: EASE.out });
+      },
+    });
+  } else {
+    panel.add(scene.add.text(0, counterY + 6, t('replayNote', lang), textStyle('caption', { color: COLORS.inkSoft, align: 'center', wordWrap: { width: panelW - 80 } })).setOrigin(0.5));
+  }
 
   // Önceki tasarımdaki boş alan yerine kısa bir özet: hamle + süre.
   const statsY = counterY + 82;
