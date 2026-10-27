@@ -104,7 +104,8 @@ console.log(`Ekran: ${width}x${height} @${dpr}x  ->  ${outDir}`);
 
 await freshSave();
 if (want('splash')) {
-  await wait(380);
+  // splash animasyonu (logo + üç eşya rafa iner) ~1 sn sürer
+  await wait(1050);
   await shot('01-splash');
 }
 await waitScene('RoomScene', 700);

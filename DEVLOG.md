@@ -337,3 +337,61 @@ başarım bildirimi, başarımlar paneli, günlük seri.
   gecikiyor → müzik arkada çalabiliyordu); oyun döngüsü + ses birlikte duruyor, dönüşte kamera yeniden sığdırılıyor.
 - **Düşük bellek**: arka plan dokuları en fazla 4 (LRU), pişmiş dokular boyutla sınırlı; 20 sahne döngüsünde doku sayısı
   96'da sabit, JS belleği 58 MB sabit. Native `onTrimMemory` web katmanından erişilemiyor (bilinen sınır, aşağıda).
+
+---
+
+## BİTİŞ — Özet
+
+**Son kontrol**: `npm run build` ✓ · `npm test` ✓ (20 dosya / 161 test; başlangıçta 16 / 133) · `npm run android:sync` ✓
+(3 eklenti: app, **haptics** (yeni), preferences). Vercel ayarlarına dokunulmadı (`vite.config.ts` aynı, çıktı yine `dist`).
+Oyun mekaniği / seviye mantığı (`src/core/**`, `src/data/levels.json`) **değişmedi** — her faz commit'inde doğrulandı.
+Reklam / reklam SDK'sı yok. Tüm görsel ve sesler kod ile üretiliyor; tek harici varlık Nunito fontu (OFL, `CREDITS.md`).
+
+**Önce / sonra**: `docs/before-after/before/` ↔ `docs/before-after/after/` (390×844 @2x, aynı ekranlar).
+**Mağaza görselleri**: `docs/store/` (6 × 1080×2160).
+
+### Yapılanlar (faz faz)
+| Faz | Öne çıkan |
+|---|---|
+| 0 | 28 maddelik "amatör görünüm" denetimi, Playwright ekran görüntüsü aracı |
+| 1 | `theme.ts` tasarım sistemi, cozy palet + 5 oda teması, **Nunito** (Fredoka'nın bozuk "ş"si düzeldi), keskin kenardan kenara render (letterbox + bulanıklık bitti), dokulu degrade arka plan + toz zerrecikleri, "linear yok" varsayılanı |
+| 2 | Cam önlü ahşap vitrin kaplar + raflar, pişmiş derinlikli eşyalar, seçim halesi + süzülme, tek tek yay uçuşu + squash/stretch + pop, havuzlu render (bir tween sızıntısı bulunup düzeltildi) |
+| 3 | Işıltı/parçacık, grup tamamlama kutlaması + yıldız uçuşu + hafif zoom, nazik "hayır" sallanması, yeni kazanma/kaybetme panelleri, basılma animasyonlu butonlar, Capacitor Haptics |
+| 4 | Tek AudioContext + efekt/müzik veriyolları, ilk dokunuşta kilit açma, yeni prosedürel efektler, prosedürel cozy müzik, ayrı müzik/efekt anahtarı |
+| 5 | Yeni ana ekran, seviye seçim haritası, ayarlar paneli (oyun içinden de), HUD çipleri, krem geçişler, splash logosu, TR/EN oda/eşya adları; **sahne döngüsünde sekme çökmesi** bulunup düzeltildi (GPU geri okuması) |
+| 6 | Vurgulu el öğreticisi + hareketsizlik ipucu, 11 başarım, günlük seri paneli, bölüm başına duvar dekoru, yeni bölüm bandı |
+| 7 | Yeni ikon/splash, 6 mağaza görseli, sürüm 1.2.0, **gerçek 48 px dokunma hedefleri** (27 → 0 ihlal), renk körü dostu rozet, yaşam döngüsü + hata taraması |
+
+### Tekrar çalıştırılabilir denetimler (geliştirme sunucusu açıkken)
+- `node scripts/screenshots.mjs <klasör>` — tüm ekranlar (seçenekler: `--width --height --dpr --notch 47,34 --only`)
+- `node scripts/storeShots.mjs docs/store` — mağaza görselleri
+- `node scripts/audit-touch.cjs` — 48 CSS px altı dokunma hedefi
+- `node scripts/bugscan.cjs` — hızlı/çift dokunma, döndürme, WebGL bağlam kaybı
+- `node scripts/scene-cycle.cjs` — 20 sahne döngüsünde doku/bellek birikimi (≈4.5 dk)
+
+### Bilinen sorunlar / doğrulanamayanlar (dürüst liste)
+1. **Gerçek Android cihazda test edilmedi** (bu ortamda Android SDK / cihaz yok). Haptik hissi, `appStateChange`, gerçek
+   çentik (safe-area) değerleri, release build (`./gradlew assembleRelease`, minify açık) cihazda denenmeli.
+2. **60 FPS hedefi cihazda ölçülmedi.** Tüm FPS değerleri başsız Chromium'un yazılım GPU'sunda (oyun yeniden başlatmada ~30 FPS);
+   orta seviye Android'de Chrome uzaktan hata ayıklama ile profil alınmalı.
+3. **Sesler/müzik kulakla değerlendirilmedi** — yalnızca çaldığı ve seviyeleri (AnalyserNode) ölçüldü.
+4. Eski WebView riski: pişirme `ctx.getTransform`, `ellipse`, `shadowBlur` kullanıyor (Chrome 68+). Çok eski WebView'li
+   cihazlarda doku pişirme başarısız olabilir.
+5. Açılışta 4 kez "GPU stall due to ReadPixels" uyarısı (Phaser'ın tek seferlik özellik testleri); döngülerde tekrar etmiyor.
+6. Phaser paketi >500 KB uyarısı (başlangıçtan beri; Phaser tree-shake edilemiyor, ayrı parça olarak önbelleklenir).
+7. Native düşük bellek sinyali (`onTrimMemory`) web katmanından dinlenemiyor; bellek sınırlı tutuldu ama sistem baskısına tepki yok.
+8. Uzun debug/engel etiketleri ("Seviye 31, kilitli kap var") seviye hapını genişletiyor; ileride ayrı bir rozet daha temiz olur.
+9. Günlük bulmaca için başarım/sayaç yok (kayıtta tutulmuyor).
+10. Yalnızca Android platformu kurulu (iOS yok).
+
+### Önerilen sonraki 5 iyileştirme
+1. **Cihaz QA turu** — 2-3 orta seviye Android'de FPS profili (Chrome remote debugging), haptik ve ses ayarı, gerçek çentik;
+   bulgulara göre `JUICE` süreleri ve parçacık sayıları ince ayar.
+2. **Doku atlası + açılışta ön pişirme** — pişmiş dokuları tek/az sayıda atlas sayfasına paketlemek (daha az GL doku geçişi,
+   daha iyi batch) ve splash sırasında ilk seviyelerin dokularını hazırlamak (ilk sahnedeki pişirme takılması biter).
+3. **Erişilebilirlik ayarları** — oyun içi "az hareket" anahtarı (şu an yalnızca işletim sistemi tercihi), büyük yazı seçeneği,
+   isteğe bağlı yüksek kontrast / desenli kap kenarı.
+4. **Reklamsız ipucu sistemi** — yıldızla açılan, sınırlı "ipucu" (öğretici elini her seviyede bir hamle için gösterir);
+   ekstra kap ile birlikte sıkışan oyuncu için nazik çıkış yolu.
+5. **Bölüm başına müzik ve ortam sesi** — her oda temasına kendi akor dizisi / tempo (şu an tek döngü) + çok hafif ortam
+   (yağmur, kuş) katmanı; ayarlardan ayrı açılıp kapanabilir.
