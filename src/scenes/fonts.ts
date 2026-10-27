@@ -45,7 +45,9 @@ export async function loadFonts(): Promise<void> {
   if (typeof FontFace === 'undefined' || !document.fonts) return;
   await Promise.all(
     NUNITO_SUBSETS.map(async (subset) => {
-      const face = new FontFace(FONT_NAME, `url(${subset.file}) format('woff2')`, {
+      // BASE_URL: Vercel/Capacitor'da '/', GitHub Pages'te '/ilk_oyun/' (bkz. .github/workflows/pages.yml).
+      const url = import.meta.env.BASE_URL + subset.file.slice(1);
+      const face = new FontFace(FONT_NAME, `url(${url}) format('woff2')`, {
         weight: '400 900',
         style: 'normal',
         display: 'block',
