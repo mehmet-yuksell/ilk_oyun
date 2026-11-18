@@ -6,7 +6,7 @@ import { iconGlobe, iconMusic, iconSpeaker, iconVibrate, type IconDrawer } from 
 import { t, type Language } from '../i18n/translations';
 import { LocalStorageSaveService, type SaveData } from '../services/SaveService';
 import { music } from '../services/MusicService';
-import { APP_VERSION } from '../config/version';
+import { APP_VERSION, AUTHOR_CREDIT } from '../config/version';
 
 /**
  * Ayarlar paneli -- ayrı bir sahne değil, HER sahnenin üstünde açılan bir katman (oyun içinden
@@ -129,7 +129,7 @@ export function openSettingsPanel(scene: Phaser.Scene, options: SettingsPanelOpt
     onTap: () => close(),
   });
   panel.add(done.root);
-  panel.add(scene.add.text(0, panelH / 2 + 22, t('versionLabel', lang, { v: APP_VERSION }), textStyle('caption', { color: COLORS.cream })).setOrigin(0.5).setAlpha(0.85));
+  panel.add(scene.add.text(0, panelH / 2 + 22, `${t('versionLabel', lang, { v: APP_VERSION })} · ${AUTHOR_CREDIT}`, textStyle('caption', { color: COLORS.cream })).setOrigin(0.5).setAlpha(0.85));
 
   panel.setY(cy + 50).setAlpha(0).setScale(0.94);
   scene.tweens.add({ targets: panel, y: cy, alpha: 1, scale: 1, duration: 360, ease: EASE.back });
